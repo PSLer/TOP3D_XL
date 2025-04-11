@@ -1411,13 +1411,17 @@ function CreateVoxelFEAmodel(inputModel)
 		fixingCond_ = find(1==nodeVolume4ApplyingBC);
 		fixingCond_ = double(meshHierarchy_(1).nodMapForward(fixingCond_));
 		fixingCond_ = [fixingCond_ ones(numel(fixingCond_),3)];
-		optLoad = 2; %% 1=Line Loads; 2=Face Loads
+		optLoad = 4; %% 1=Line Loads; 2=Face Loads; 3=Face Loads-B; 4=Face Loads-C
 		nodeVolume4ApplyingBC = zeros(meshHierarchy_(1).resY+1, meshHierarchy_(1).resX+1, meshHierarchy_(1).resZ+1);
 		switch optLoad
 			case 1		
 				nodeVolume4ApplyingBC(1:nely_+1,nelx_+1,1) = 1;
 			case 2
 				nodeVolume4ApplyingBC(round(nely_/3)*1:round(nely_/3)*2,nelx_+1,round(nelz_/3)*1:round(nelz_/3)*2) = 1;
+			case 3
+				nodeVolume4ApplyingBC(1:nely_+1,round(nelx_*11/12):nelx_+1,1) = 1;
+			case 4
+				nodeVolume4ApplyingBC(1:nely_+1,nelx_+1,1:round(nelz_/6+1)) = 1;				
 		end		
 		iLoad = find(1==nodeVolume4ApplyingBC);
 		iLoad = double(meshHierarchy_(1).nodMapForward(iLoad));
