@@ -22,7 +22,7 @@ function InitialSettings()
 	%% Physical Property
 	global modulus_; modulus_ = 1.0; %% Young's modulus	
 	global poissonRatio_; poissonRatio_ = 0.3;	%% Poisson's ratio
-	global modulusMin_; modulusMin_ = 1.0e-6;	
+	global modulusMin_; modulusMin_ = 1.0e-6 * modulus_;	
 	global SIMPpenalty_; SIMPpenalty_ = 3;
 	global cellSize_; cellSize_ = 1/1;
 	%% Linear System Solver	
@@ -47,7 +47,20 @@ function TOP3D_XL_TO(inputModel, V0, nLoop, rMin)
 	global maxIT_;	
 	global densityLayout_; %%Result
 	global F_;
-
+	global cellSize_ maxIT_ typeVcycle_ nonDyadic_ poissonRatio_
+	
+	%%Displaying Inputs
+	disp('==========================Displaying Inputs==========================');
+	disp(['..............................................Volume Fraction: ', sprintf('%6.4f', V0)]);
+	disp(['..........................................Filter Radius: ', sprintf('%6.4f', rMin), ' Cells']);
+	disp(['................................................Cell Size: ', sprintf('%6.4e', cellSize_)]);
+	disp(['...............................................#MGCG Iterations: ', sprintf('%4i', maxIT_)]);
+	disp(strcat('....................................................#V-cycle: ', " ", typeVcycle_));
+	disp(['..............................................#Non-dyadic Strategy: ', sprintf('%1i', nonDyadic_)]);
+	disp(['...........................................Youngs Modulus: ', sprintf('%6.4e', modulus_)]);
+	disp(['....................................Youngs Modulus (Min.): ', sprintf('%6.4e', modulusMin_)]);
+	disp(['...........................................Poissons Ratio: ', sprintf('%6.4e', poissonRatio_)]);
+	
 	tStartTotal = tic;
 	outPath = './out/'; if ~exist(outPath, 'dir'), mkdir(outPath); end
 	InitialSettings();
@@ -222,10 +235,24 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 	global maxIT_;
 	global densityLayout_; %%Result
 	global F_;
+	global cellSize_ maxIT_ typeVcycle_ nonDyadic_ poissonRatio_
 	betaPIO = 1.0;
 	etaPIO = 0.5;
 	pPIO = 16; 			% P-norm in for local volume constraint
 	pMaxPIO = 128;		% for Heaviside Projection	
+
+	%%Displaying Inputs
+	disp('==========================Displaying Inputs==========================');
+	disp(['........................................Local Volume Fraction: ', sprintf('%6.4f', Ve0)]);
+	disp(['.......................................Effecting Radius: ', sprintf('%6.4f', rHat), ' Cells']);
+	disp(['..........................................Filter Radius: ', sprintf('%6.4f', rMin), ' Cells']);
+	disp(['................................................Cell Size: ', sprintf('%6.4e', cellSize_)]);
+	disp(['...............................................#MGCG Iterations: ', sprintf('%4i', maxIT_)]);
+	disp(strcat('....................................................#V-cycle: ', " ", typeVcycle_));
+	disp(['..............................................#Non-dyadic Strategy: ', sprintf('%1i', nonDyadic_)]);
+	disp(['...........................................Youngs Modulus: ', sprintf('%6.4e', modulus_)]);
+	disp(['....................................Youngs Modulus (Min.): ', sprintf('%6.4e', modulusMin_)]);
+	disp(['...........................................Poissons Ratio: ', sprintf('%6.4e', poissonRatio_)]);
 	
 	tStartTotal = tic;
 	outPath = './out/'; if ~exist(outPath, 'dir'), mkdir(outPath); end
@@ -316,7 +343,7 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 		itimeOptimization = toc(tOptimizationClock);
 		
 		tLocalVolumeConstraintClock = tic;
-		x_pde_hat = TopOpti_ConductPDEFiltering_matrixFree(xPhys, PDEkernal4LocalVolumeFraction, diagPrecond4LocalVolumeFraction, passiveElements);		
+		x_pde_hat = TopOpti_ConductPDEFiltering_matrixFree(xPhys, PDEkernal4LocalVolumeFraction, diagPrecond4LocalVolumeFraction);		
 		dfdx_pde = (sum(x_pde_hat.^pPIO ./ volMaxList.^pPIO)/numElements)^(1/pPIO-1)*(x_pde_hat.^(pPIO-1) ./ volMaxList.^pPIO)/numElements;
 		itimeLocalVolumeConstraint = toc(tLocalVolumeConstraintClock);
 		
@@ -328,7 +355,7 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 		
 		%%5.4 solve the optimization probelm
 		tLocalVolumeConstraintClock = tic;
-		dfdx = TopOpti_ConductPDEFiltering_matrixFree(dfdx_pde(:), PDEkernal4LocalVolumeFraction, diagPrecond4LocalVolumeFraction, passiveElements);
+		dfdx = TopOpti_ConductPDEFiltering_matrixFree(dfdx_pde(:), PDEkernal4LocalVolumeFraction, diagPrecond4LocalVolumeFraction);
 		itimeLocalVolumeConstraint = itimeLocalVolumeConstraint + toc(tLocalVolumeConstraintClock);
 		
 		tPDEfilteringClock = tic;
