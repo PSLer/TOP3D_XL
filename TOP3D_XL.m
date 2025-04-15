@@ -49,6 +49,11 @@ function TOP3D_XL_TO(inputModel, V0, nLoop, rMin)
 	global F_;
 	global cellSize_ maxIT_ typeVcycle_ nonDyadic_ poissonRatio_
 	
+	tStartTotal = tic;
+	outPath = './out/'; if ~exist(outPath, 'dir'), mkdir(outPath); end
+	InitialSettings();
+	fid = fopen(strcat(outPath, 'RunLog.log'), 'w'); fclose(fid); diary(strcat(outPath, 'RunLog.log'));
+	
 	%%Displaying Inputs
 	disp('==========================Displaying Inputs==========================');
 	disp(['..............................................Volume Fraction: ', sprintf('%6.4f', V0)]);
@@ -59,12 +64,8 @@ function TOP3D_XL_TO(inputModel, V0, nLoop, rMin)
 	disp(['..............................................#Non-dyadic Strategy: ', sprintf('%1i', nonDyadic_)]);
 	disp(['...........................................Youngs Modulus: ', sprintf('%6.4e', modulus_)]);
 	disp(['....................................Youngs Modulus (Min.): ', sprintf('%6.4e', modulusMin_)]);
-	disp(['...........................................Poissons Ratio: ', sprintf('%6.4e', poissonRatio_)]);
+	disp(['...........................................Poissons Ratio: ', sprintf('%6.4e', poissonRatio_)]);	
 	
-	tStartTotal = tic;
-	outPath = './out/'; if ~exist(outPath, 'dir'), mkdir(outPath); end
-	InitialSettings();
-	fid = fopen(strcat(outPath, 'RunLog.log'), 'w'); fclose(fid); diary(strcat(outPath, 'RunLog.log'));
 	%%0. Modeling.
 	tStart = tic;
 	CreateVoxelFEAmodel(inputModel); 
@@ -240,6 +241,11 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 	etaPIO = 0.5;
 	pPIO = 16; 			% P-norm in for local volume constraint
 	pMaxPIO = 128;		% for Heaviside Projection	
+	
+	tStartTotal = tic;
+	outPath = './out/'; if ~exist(outPath, 'dir'), mkdir(outPath); end
+	InitialSettings();
+	fid = fopen(strcat(outPath, 'RunLog.log'), 'w'); fclose(fid); diary(strcat(outPath, 'RunLog.log'));
 
 	%%Displaying Inputs
 	disp('==========================Displaying Inputs==========================');
@@ -253,11 +259,6 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 	disp(['...........................................Youngs Modulus: ', sprintf('%6.4e', modulus_)]);
 	disp(['....................................Youngs Modulus (Min.): ', sprintf('%6.4e', modulusMin_)]);
 	disp(['...........................................Poissons Ratio: ', sprintf('%6.4e', poissonRatio_)]);
-	
-	tStartTotal = tic;
-	outPath = './out/'; if ~exist(outPath, 'dir'), mkdir(outPath); end
-	InitialSettings();
-	fid = fopen(strcat(outPath, 'RunLog.log'), 'w'); fclose(fid); diary(strcat(outPath, 'RunLog.log'));
 	
 	%%0. Modeling.
 	tStart = tic;
