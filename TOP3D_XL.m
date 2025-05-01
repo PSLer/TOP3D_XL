@@ -60,8 +60,8 @@ function TOP3D_XL_TO(inputModel, V0, nLoop, rMin)
 	disp(['..........................................Filter Radius: ', sprintf('%6.4f', rMin), ' Cells']);
 	disp(['................................................Cell Size: ', sprintf('%6.4e', cellSize_)]);
 	disp(['...............................................#MGCG Iterations: ', sprintf('%4i', maxIT_)]);
-	disp(strcat('....................................................#V-cycle: ', " ", typeVcycle_));
-	disp(['..............................................#Non-dyadic Strategy: ', sprintf('%1i', nonDyadic_)]);
+	disp(strcat('.....................................................V-cycle: ', " ", typeVcycle_));
+	disp(['...............................................Non-dyadic Strategy: ', sprintf('%1i', nonDyadic_)]);
 	disp(['...........................................Youngs Modulus: ', sprintf('%6.4e', modulus_)]);
 	disp(['....................................Youngs Modulus (Min.): ', sprintf('%6.4e', modulusMin_)]);
 	disp(['...........................................Poissons Ratio: ', sprintf('%6.4e', poissonRatio_)]);	
@@ -254,8 +254,8 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 	disp(['..........................................Filter Radius: ', sprintf('%6.4f', rMin), ' Cells']);
 	disp(['................................................Cell Size: ', sprintf('%6.4e', cellSize_)]);
 	disp(['...............................................#MGCG Iterations: ', sprintf('%4i', maxIT_)]);
-	disp(strcat('....................................................#V-cycle: ', " ", typeVcycle_));
-	disp(['..............................................#Non-dyadic Strategy: ', sprintf('%1i', nonDyadic_)]);
+	disp(strcat('.....................................................V-cycle: ', " ", typeVcycle_));
+	disp(['...............................................Non-dyadic Strategy: ', sprintf('%1i', nonDyadic_)]);
 	disp(['...........................................Youngs Modulus: ', sprintf('%6.4e', modulus_)]);
 	disp(['....................................Youngs Modulus (Min.): ', sprintf('%6.4e', modulusMin_)]);
 	disp(['...........................................Poissons Ratio: ', sprintf('%6.4e', poissonRatio_)]);
