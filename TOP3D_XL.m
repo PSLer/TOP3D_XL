@@ -8,6 +8,7 @@ function TOP3D_XL(inputModel, consType, V0, nLoop, rMin, varargin)
 	%%TOP3D_XL(true(50,100,50), 'LOCAL', 0.5, 300, sqrt(3), 6); $$ Run Porous Infill Optimization on the Built-in Cuboid Design Domain
 	%%TOP3D_XL(fileName, 'GLOBAL', 0.4, 50, sqrt(3)); $$ Run Topology Optimization on the External Design Domain Provided in *.TopVoxel
 	%%TOP3D_XL(fileName, 'LOCAL', 0.5, 300, sqrt(3), 6); $$ Run Porous Infill Optimization on the External Design Domain Provided in *.TopVoxel
+	%% More Datasets: https://drive.google.com/drive/folders/12Q0MOsgd43LJs_j0maeFFhnxwtI2gZ1w?usp=sharing
 	switch consType
 		case 'GLOBAL'
 			TOP3D_XL_TO(inputModel, V0, nLoop, rMin);	
@@ -452,6 +453,134 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
     camlight('headlight','infinite');
 	fileName = strcat(outPath, 'DesignVolume.stl');
 	IO_ExportDesignInTriSurface_stl(fileName, facesIsosurface, facesIsocap);	
+end
+
+function CreateVoxelFEAmodel(inputModel)
+	global voxelizedVolume_;
+	global nelx_; 
+	global nely_; 
+	global nelz_; 
+	global fixingCond_; 
+	global loadingCond_;
+	global objWeightingList_;
+	global meshHierarchy_;
+	global passiveElements_;	
+	global densityLayout_;
+	
+	loadingCond_ = cell(1,1);
+	if ischar(inputModel) || isstring(inputModel)
+		fid = fopen(inputModel, 'r');
+		fileHead = fscanf(fid, '%s %s %s %s', 4);
+		versionHead = fscanf(fid, '%s', 1);
+		versionID = fscanf(fid, '%f', 1);
+		switch versionID
+			case 1.0
+				if ~strcmp(fscanf(fid, '%s', 1), 'Resolution:'), error('Incompatible Mesh Data Format!'); end
+				resolutions = fscanf(fid, '%d %d %d', 3);
+				nelx_ = resolutions(1); nely_ = resolutions(2); nelz_ = resolutions(3);
+				densityValuesCheck = fscanf(fid, '%s %s', 2);
+				checkDensityValuesIncluded = fscanf(fid, '%d', 1);
+				startReadSolidVoxels = fscanf(fid, '%s %s', 2);
+				numSolidVoxels = fscanf(fid, '%d', 1);
+				if checkDensityValuesIncluded
+					voxelsState = fscanf(fid, '%d %e', [2 numSolidVoxels])';
+					solidVoxels = voxelsState(:,1);
+					densityLayout_ = voxelsState(:,2);
+				else
+					solidVoxels = fscanf(fid, '%d', [1 numSolidVoxels])';
+				end
+				if ~strcmp(fscanf(fid, '%s', 1), 'Passive'), error('Incompatible Mesh Data Format!'); end
+				if ~strcmp(fscanf(fid, '%s', 1), 'elements:'), error('Incompatible Mesh Data Format!'); end
+				numPassiveElements = fscanf(fid, '%d', 1);
+				passiveElements_ = fscanf(fid, '%d', [1 numPassiveElements])';
+				if ~strcmp(fscanf(fid, '%s', 1), 'Fixations:'), error('Incompatible Mesh Data Format!'); end
+				numFixedNodes = fscanf(fid, '%d', 1);
+				if numFixedNodes>0		
+					fixingCond_ = fscanf(fid, '%d %d %d %d', [4 numFixedNodes])';		
+				end
+				if ~strcmp(fscanf(fid, '%s', 1), 'Loads:'), error('Incompatible Mesh Data Format!'); end
+				numLoadedNodes = fscanf(fid, '%d', 1);	
+				if numLoadedNodes>0			
+					loadingCond_{1} = fscanf(fid, '%d %e %e %e', [4 numLoadedNodes])';								
+				end
+				AdditionalLoads = fscanf(fid, '%s %s', 2);
+				numAdditionalLoads = fscanf(fid, '%d', 1);
+				if numAdditionalLoads>0
+					for ii=1:numAdditionalLoads
+						if ~strcmp(fscanf(fid, '%s', 1), 'Loads:'), error('Incompatible Mesh Data Format!'); end
+						numLoadedNodes = fscanf(fid, '%d', 1);
+						idxLoad = fscanf(fid, '%d', 1);
+						loadingCond_{idxLoad,1} = fscanf(fid, '%d %e %e %e', [4 numLoadedNodes])';
+					end
+				end
+				objWeightingList_ = ones(1,numel(loadingCond_))/numel(loadingCond_);
+			otherwise
+				warning('Unsupported Data!'); fclose(fid); return;
+		end		
+		fclose(fid);	
+		voxelizedVolume_ = false(nelx_*nely_*nelz_,1); 
+		voxelizedVolume_(solidVoxels) = true;
+		voxelizedVolume_ = reshape(voxelizedVolume_, nely_, nelx_, nelz_);
+		FEA_VoxelBasedDiscretization();
+		
+		%%In case the resolution is slightly inconsistent	
+		if ~isempty(fixingCond_)
+			[~,uniqueFixedNodes] = unique(fixingCond_(:,1));
+			fixingCond_ = fixingCond_(uniqueFixedNodes,:);
+			[~,sortMap] = sort(fixingCond_(:,1),'ascend');
+			fixingCond_ = fixingCond_(sortMap,:);
+			fixingCond_ = AdaptBCExternalMdl(fixingCond_, [meshHierarchy_(1).resX+1 meshHierarchy_(1).resY+1 meshHierarchy_(1).resZ+1]);
+			fixingCond_(:,1) = double(meshHierarchy_(1).nodMapForward(fixingCond_(:,1)));
+		end
+		if ~isempty(loadingCond_{1})
+			for ii=1:numel(loadingCond_)
+				iLoad = loadingCond_{ii};
+				[~,uniqueLoadedNodes] = unique(iLoad(:,1));
+				iLoad = iLoad(uniqueLoadedNodes,:);
+				[~,sortMap] = sort(iLoad(:,1),'ascend');
+				iLoad = iLoad(sortMap,:);
+				iLoad = AdaptBCExternalMdl(iLoad, [meshHierarchy_(1).resX+1 meshHierarchy_(1).resY+1 meshHierarchy_(1).resZ+1]);
+				iLoad(:,1) = double(meshHierarchy_(1).nodMapForward(iLoad(:,1)));
+				loadingCond_{ii} = iLoad;			
+			end	
+		end
+		if ~isempty(passiveElements_)
+			passiveElements_ = sort(passiveElements_, 'ascend');
+			passiveElements_ = AdaptPassiveElementsExternalMdl(passiveElements_, [meshHierarchy_(1).resX meshHierarchy_(1).resY meshHierarchy_(1).resZ]);
+			passiveElements_ = meshHierarchy_(1).eleMapForward(passiveElements_);
+		end		
+	elseif islogical(inputModel) %%Built-in Cuboid Design Domain for Testing
+		voxelizedVolume_ = inputModel;
+		[nely_, nelx_, nelz_] = size(inputModel);
+		if nelx_<3 || nely_<3 || nelz_<3 %% At least 3 layers solid elements are needed
+			error('Inappropriate Input Model!');
+		end
+		FEA_VoxelBasedDiscretization();
+		%%Apply Boundary Conditions
+		nodeVolume4ApplyingBC = zeros(meshHierarchy_(1).resY+1, meshHierarchy_(1).resX+1, meshHierarchy_(1).resZ+1);
+		nodeVolume4ApplyingBC(1:nely_+1,1,1:nelz_+1) = 1;
+		fixingCond_ = find(1==nodeVolume4ApplyingBC);
+		fixingCond_ = double(meshHierarchy_(1).nodMapForward(fixingCond_));
+		fixingCond_ = [fixingCond_ ones(numel(fixingCond_),3)];
+		optLoad = 4; %% 1=Line Loads; 2=Face Loads; 3=Face Loads-B; 4=Face Loads-C
+		nodeVolume4ApplyingBC = zeros(meshHierarchy_(1).resY+1, meshHierarchy_(1).resX+1, meshHierarchy_(1).resZ+1);
+		switch optLoad
+			case 1		
+				nodeVolume4ApplyingBC(1:nely_+1,nelx_+1,1) = 1;
+			case 2
+				nodeVolume4ApplyingBC(round(nely_/3)*1:round(nely_/3)*2,nelx_+1,round(nelz_/3)*1:round(nelz_/3)*2) = 1;
+			case 3
+				nodeVolume4ApplyingBC(1:nely_+1,round(nelx_*11/12):nelx_+1,1) = 1;
+			case 4
+				nodeVolume4ApplyingBC(1:nely_+1,nelx_+1,1:round(nelz_/6+1)) = 1;				
+		end		
+		iLoad = find(1==nodeVolume4ApplyingBC);
+		iLoad = double(meshHierarchy_(1).nodMapForward(iLoad));
+		iLoad = [iLoad repmat([0 0 -1]/numel(iLoad), numel(iLoad), 1)];
+		loadingCond_{1} = iLoad;
+		objWeightingList_ = 1;
+		passiveElements_ = [];
+	end
 end
 
 %%Key Features
@@ -1330,134 +1459,6 @@ function [oKeFreeDOFs, oKeFixedDOFs] = Solving_ApplyBConEleStiffMat_B(iKeFreeDOF
 	end
 	oKeFreeDOFs = oKeFreeDOFs(:);
 	oKeFixedDOFs = oKeFixedDOFs(:);
-end
-
-function CreateVoxelFEAmodel(inputModel)
-	global voxelizedVolume_;
-	global nelx_; 
-	global nely_; 
-	global nelz_; 
-	global fixingCond_; 
-	global loadingCond_;
-	global objWeightingList_;
-	global meshHierarchy_;
-	global passiveElements_;	
-	global densityLayout_;
-	
-	loadingCond_ = cell(1,1);
-	if ischar(inputModel) || isstring(inputModel)
-		fid = fopen(inputModel, 'r');
-		fileHead = fscanf(fid, '%s %s %s %s', 4);
-		versionHead = fscanf(fid, '%s', 1);
-		versionID = fscanf(fid, '%f', 1);
-		switch versionID
-			case 1.0
-				if ~strcmp(fscanf(fid, '%s', 1), 'Resolution:'), error('Incompatible Mesh Data Format!'); end
-				resolutions = fscanf(fid, '%d %d %d', 3);
-				nelx_ = resolutions(1); nely_ = resolutions(2); nelz_ = resolutions(3);
-				densityValuesCheck = fscanf(fid, '%s %s', 2);
-				checkDensityValuesIncluded = fscanf(fid, '%d', 1);
-				startReadSolidVoxels = fscanf(fid, '%s %s', 2);
-				numSolidVoxels = fscanf(fid, '%d', 1);
-				if checkDensityValuesIncluded
-					voxelsState = fscanf(fid, '%d %e', [2 numSolidVoxels])';
-					solidVoxels = voxelsState(:,1);
-					densityLayout_ = voxelsState(:,2);
-				else
-					solidVoxels = fscanf(fid, '%d', [1 numSolidVoxels])';
-				end
-				if ~strcmp(fscanf(fid, '%s', 1), 'Passive'), error('Incompatible Mesh Data Format!'); end
-				if ~strcmp(fscanf(fid, '%s', 1), 'elements:'), error('Incompatible Mesh Data Format!'); end
-				numPassiveElements = fscanf(fid, '%d', 1);
-				passiveElements_ = fscanf(fid, '%d', [1 numPassiveElements])';
-				if ~strcmp(fscanf(fid, '%s', 1), 'Fixations:'), error('Incompatible Mesh Data Format!'); end
-				numFixedNodes = fscanf(fid, '%d', 1);
-				if numFixedNodes>0		
-					fixingCond_ = fscanf(fid, '%d %d %d %d', [4 numFixedNodes])';		
-				end
-				if ~strcmp(fscanf(fid, '%s', 1), 'Loads:'), error('Incompatible Mesh Data Format!'); end
-				numLoadedNodes = fscanf(fid, '%d', 1);	
-				if numLoadedNodes>0			
-					loadingCond_{1} = fscanf(fid, '%d %e %e %e', [4 numLoadedNodes])';								
-				end
-				AdditionalLoads = fscanf(fid, '%s %s', 2);
-				numAdditionalLoads = fscanf(fid, '%d', 1);
-				if numAdditionalLoads>0
-					for ii=1:numAdditionalLoads
-						if ~strcmp(fscanf(fid, '%s', 1), 'Loads:'), error('Incompatible Mesh Data Format!'); end
-						numLoadedNodes = fscanf(fid, '%d', 1);
-						idxLoad = fscanf(fid, '%d', 1);
-						loadingCond_{idxLoad,1} = fscanf(fid, '%d %e %e %e', [4 numLoadedNodes])';
-					end
-				end
-				objWeightingList_ = ones(1,numel(loadingCond_))/numel(loadingCond_);
-			otherwise
-				warning('Unsupported Data!'); fclose(fid); return;
-		end		
-		fclose(fid);	
-		voxelizedVolume_ = false(nelx_*nely_*nelz_,1); 
-		voxelizedVolume_(solidVoxels) = true;
-		voxelizedVolume_ = reshape(voxelizedVolume_, nely_, nelx_, nelz_);
-		FEA_VoxelBasedDiscretization();
-		
-		%%In case the resolution is slightly inconsistent	
-		if ~isempty(fixingCond_)
-			[~,uniqueFixedNodes] = unique(fixingCond_(:,1));
-			fixingCond_ = fixingCond_(uniqueFixedNodes,:);
-			[~,sortMap] = sort(fixingCond_(:,1),'ascend');
-			fixingCond_ = fixingCond_(sortMap,:);
-			fixingCond_ = AdaptBCExternalMdl(fixingCond_, [meshHierarchy_(1).resX+1 meshHierarchy_(1).resY+1 meshHierarchy_(1).resZ+1]);
-			fixingCond_(:,1) = double(meshHierarchy_(1).nodMapForward(fixingCond_(:,1)));
-		end
-		if ~isempty(loadingCond_{1})
-			for ii=1:numel(loadingCond_)
-				iLoad = loadingCond_{ii};
-				[~,uniqueLoadedNodes] = unique(iLoad(:,1));
-				iLoad = iLoad(uniqueLoadedNodes,:);
-				[~,sortMap] = sort(iLoad(:,1),'ascend');
-				iLoad = iLoad(sortMap,:);
-				iLoad = AdaptBCExternalMdl(iLoad, [meshHierarchy_(1).resX+1 meshHierarchy_(1).resY+1 meshHierarchy_(1).resZ+1]);
-				iLoad(:,1) = double(meshHierarchy_(1).nodMapForward(iLoad(:,1)));
-				loadingCond_{ii} = iLoad;			
-			end	
-		end
-		if ~isempty(passiveElements_)
-			passiveElements_ = sort(passiveElements_, 'ascend');
-			passiveElements_ = AdaptPassiveElementsExternalMdl(passiveElements_, [meshHierarchy_(1).resX meshHierarchy_(1).resY meshHierarchy_(1).resZ]);
-			passiveElements_ = meshHierarchy_(1).eleMapForward(passiveElements_);
-		end		
-	elseif islogical(inputModel) %%Built-in Cuboid Design Domain for Testing
-		voxelizedVolume_ = inputModel;
-		[nely_, nelx_, nelz_] = size(inputModel);
-		if nelx_<3 || nely_<3 || nelz_<3 %% At least 3 layers solid elements are needed
-			error('Inappropriate Input Model!');
-		end
-		FEA_VoxelBasedDiscretization();
-		%%Apply Boundary Conditions
-		nodeVolume4ApplyingBC = zeros(meshHierarchy_(1).resY+1, meshHierarchy_(1).resX+1, meshHierarchy_(1).resZ+1);
-		nodeVolume4ApplyingBC(1:nely_+1,1,1:nelz_+1) = 1;
-		fixingCond_ = find(1==nodeVolume4ApplyingBC);
-		fixingCond_ = double(meshHierarchy_(1).nodMapForward(fixingCond_));
-		fixingCond_ = [fixingCond_ ones(numel(fixingCond_),3)];
-		optLoad = 4; %% 1=Line Loads; 2=Face Loads; 3=Face Loads-B; 4=Face Loads-C
-		nodeVolume4ApplyingBC = zeros(meshHierarchy_(1).resY+1, meshHierarchy_(1).resX+1, meshHierarchy_(1).resZ+1);
-		switch optLoad
-			case 1		
-				nodeVolume4ApplyingBC(1:nely_+1,nelx_+1,1) = 1;
-			case 2
-				nodeVolume4ApplyingBC(round(nely_/3)*1:round(nely_/3)*2,nelx_+1,round(nelz_/3)*1:round(nelz_/3)*2) = 1;
-			case 3
-				nodeVolume4ApplyingBC(1:nely_+1,round(nelx_*11/12):nelx_+1,1) = 1;
-			case 4
-				nodeVolume4ApplyingBC(1:nely_+1,nelx_+1,1:round(nelz_/6+1)) = 1;				
-		end		
-		iLoad = find(1==nodeVolume4ApplyingBC);
-		iLoad = double(meshHierarchy_(1).nodMapForward(iLoad));
-		iLoad = [iLoad repmat([0 0 -1]/numel(iLoad), numel(iLoad), 1)];
-		loadingCond_{1} = iLoad;
-		objWeightingList_ = 1;
-		passiveElements_ = [];
-	end
 end
 
 function tarBC = AdaptBCExternalMdl(srcBC, adjustedRes)
