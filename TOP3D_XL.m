@@ -8,7 +8,7 @@ function TOP3D_XL(inputModel, consType, V0, nLoop, rMin, varargin)
 	%%TOP3D_XL(true(50,100,50), 'LOCAL', 0.5, 300, sqrt(3), 6); $$ Run Porous Infill Optimization on the Built-in Cuboid Design Domain
 	%%TOP3D_XL('./data/Femur.TopVoxel', 'GLOBAL', 0.4, 50, sqrt(3)); $$ Run Topology Optimization on the External Design Domain Provided in *.TopVoxel
 	%%TOP3D_XL('./data/Femur.TopVoxel', 'LOCAL', 0.5, 300, sqrt(3), 6); $$ Run Porous Infill Optimization on the External Design Domain Provided in *.TopVoxel
-	%% Download External Datasets (Femur, Molar, GEbracket): https://syncandshare.lrz.de/getlink/fiW6M69m5HoTUcH4T7wLKZ/
+	%% Download External Datasets (Femur, Molar, GEbracket): https://syncandshare.lrz.de/getlink/fiW6M69m5HoTUcH4T7wLKZ/ (until 2026.11.25)
 	switch consType
 		case 'GLOBAL'
 			TOP3D_XL_TO(inputModel, V0, nLoop, rMin);	
