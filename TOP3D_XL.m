@@ -39,16 +39,12 @@ end
 
 function TOP3D_XL_TO(inputModel, V0, nLoop, rMin)	
 	global meshHierarchy_;
-	global specifyPassiveRegions_;
-	global passiveElements_;
-	global modulus_;
-	global modulusMin_; 
-	global SIMPpenalty_;	
-	global tol_;
-	global maxIT_;	
+	global specifyPassiveRegions_ passiveElements_;
+	global modulus_ modulusMin_ SIMPpenalty_;	
+	global tol_ maxIT_;	
 	global densityLayout_; %%Result
 	global F_;
-	global cellSize_ maxIT_ typeVcycle_ nonDyadic_ poissonRatio_
+	global cellSize_ typeVcycle_ nonDyadic_ poissonRatio_
 	
 	tStartTotal = tic;
 	outPath = './out/'; if ~exist(outPath, 'dir'), mkdir(outPath); end
@@ -228,16 +224,12 @@ end
 
 function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 	global meshHierarchy_;
-	global passiveElements_;
-	global specifyPassiveRegions_;
-	global modulus_;
-	global modulusMin_; 
-	global SIMPpenalty_;		
-	global tol_;
-	global maxIT_;
+	global passiveElements_ specifyPassiveRegions_;
+	global modulus_ modulusMin_ SIMPpenalty_;		
+	global tol_ maxIT_;
 	global densityLayout_; %%Result
 	global F_;
-	global cellSize_ maxIT_ typeVcycle_ nonDyadic_ poissonRatio_
+	global cellSize_ typeVcycle_ nonDyadic_ poissonRatio_
 	betaPIO = 1.0;
 	etaPIO = 0.5;
 	pPIO = 16; 			% P-norm in for local volume constraint
@@ -289,8 +281,6 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 	
 	xold1 = x(activeEles);	
 	xold2 = xold1;
-	low = 0;
-	upp = 0;
 	loopbeta = 0; 
 	loop = 0;
 	change = 1.0;
@@ -319,9 +309,7 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 
 	%%5. optimization
 	SIMP = @(xPhys) modulusMin_+xPhys(:)'.^SIMPpenalty_ .* (modulus_-modulusMin_);
-	DeSIMP = @(xPhys) SIMPpenalty_*(modulus_-modulusMin_)' .* xPhys.^(SIMPpenalty_-1);
-	HeavisideProjection = @(xTilde) (tanh(betaPIO*etaPIO) + tanh(betaPIO*(xTilde-etaPIO))) / (tanh(betaPIO*etaPIO) + tanh(betaPIO*(1-etaPIO)));	
-	DeHeavisideProjection = @(xTilde) betaPIO*(1-tanh(betaPIO*(xTilde-etaPIO)).*tanh(betaPIO*(xTilde-etaPIO)))/(tanh(betaPIO*etaPIO)+tanh(betaPIO*(1-etaPIO)));		
+	DeSIMP = @(xPhys) SIMPpenalty_*(modulus_-modulusMin_)' .* xPhys.^(SIMPpenalty_-1);	
 	while loop < nLoop && change > 0.0001 && sharpness>0.01
 		perIteCost = tic;
 		loopbeta = loopbeta+1; loop = loop+1; 
@@ -456,16 +444,9 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 end
 
 function CreateVoxelFEAmodel(inputModel)
-	global voxelizedVolume_;
-	global nelx_; 
-	global nely_; 
-	global nelz_; 
-	global fixingCond_; 
-	global loadingCond_;
-	global objWeightingList_;
-	global meshHierarchy_;
-	global passiveElements_;	
-	global densityLayout_;
+	global voxelizedVolume_ nelx_ nely_ nelz_; 
+	global fixingCond_ loadingCond_ objWeightingList_;
+	global meshHierarchy_ passiveElements_ densityLayout_;
 	
 	loadingCond_ = cell(1,1);
 	if ischar(inputModel) || isstring(inputModel)
@@ -585,8 +566,7 @@ end
 
 %%Key Features
 function IO_ExportDesignInVolume_nii(fileName)
-	global meshHierarchy_;
-	global densityLayout_;
+	global meshHierarchy_ densityLayout_;
 	V = zeros(numel(meshHierarchy_(1).eleMapForward),1);
 	V(meshHierarchy_(1).eleMapBack,1) = densityLayout_;
 	V = reshape(V, meshHierarchy_(1).resY, meshHierarchy_(1).resX, meshHierarchy_(1).resZ);
@@ -629,7 +609,6 @@ function [y, varargout] = Solving_PCG(AtX, PtV, b, tol, maxIT, printP, varargin)
 	%%maxIT --- mAtXximum number of iterations
 
 	normB = norm(b);
-	its = 0;
 	if 7==nargin, y = varargin{1}; else, y = zeros(size(b)); end
 	rVec1 = b - AtX(y);
 	zVec = PtV(rVec1);
@@ -771,10 +750,9 @@ end
 
 function x = Solving_Vcycle(r)	
 	global meshHierarchy_;
-	global weightFactorJacobi_;
-	global numLevels_;
+	global weightFactorJacobi_ numLevels_ typeVcycle_;
 	global cholFac_; global cholPermut_;
-	global typeVcycle_; 
+
 	%%0. preparation
 	varVcycle = struct('x', [], 'r', []);
 	varVcycle = repmat(varVcycle, numLevels_, 1);
@@ -849,9 +827,10 @@ function [PDEkernal, diagPrecond] = TopOpti_SetupPDEfilter_matrixFree(filterRadi
 	w = [ 1.0  1.0  1.0  1.0  1.0  1.0 1.0  1.0]';
 	
 	%% Trilinear Shape Functions (N)
-	N = zeros(size(s,1), 8);
-	N(:,1) = 0.125*(1-s).*(1-t).*(1-p); N(:,2) = 0.125*(1+s).*(1-t).*(1-p); N(:,3) = 0.125*(1+s).*(1+t).*(1-p); N(:,4) = 0.125*(1-s).*(1+t).*(1-p);
-	N(:,5) = 0.125*(1-s).*(1-t).*(1+p); N(:,6) = 0.125*(1+s).*(1-t).*(1+p); N(:,7) = 0.125*(1+s).*(1+t).*(1+p); N(:,8) = 0.125*(1-s).*(1+t).*(1+p);
+	% N = zeros(size(s,1), 8);
+	% N(:,1) = 0.125*(1-s).*(1-t).*(1-p); N(:,2) = 0.125*(1+s).*(1-t).*(1-p); N(:,3) = 0.125*(1+s).*(1+t).*(1-p); N(:,4) = 0.125*(1-s).*(1+t).*(1-p);
+	% N(:,5) = 0.125*(1-s).*(1-t).*(1+p); N(:,6) = 0.125*(1+s).*(1-t).*(1+p); N(:,7) = 0.125*(1+s).*(1+t).*(1+p); N(:,8) = 0.125*(1-s).*(1+t).*(1+p);
+	N = Solving_TrilinearInterpolation([s t p]);
 	
 	%% dN
 	dN1ds = -0.125*(1-t).*(1-p); dN2ds = 0.125*(1-t).*(1-p); dN3ds = 0.125*(1+t).*(1-p);  dN4ds = -0.125*(1+t).*(1-p);
@@ -895,8 +874,7 @@ end
 function tar = TopOpti_ConductPDEFiltering_matrixFree(src, PDEkernal, diagPrecond, varargin)
 	global meshHierarchy_;
 	global PDEkernal_;
-    global maxIT_;
-    global tol_;
+    global maxIT_ tol_;
 	
 	PDEkernal_ = PDEkernal;
 	%%Element to Node
@@ -943,14 +921,9 @@ function Y = MatTimesVec_matrixFree_B(uVec)
 end
 
 function Solving_AssembleFEAstencil()
-	global meshHierarchy_;
-	global numLevels_;
-	global cholFac_; global cholPermut_;
-	global isThisEle2ndLevelIncludingFixedDOFsOn1stLevel_;
-	global uniqueKesFixed_;
-	global uniqueKesFree_;	
-	global sonElesWithFixedDOFs_;
-	global mapUniqueKes_;
+	global meshHierarchy_ numLevels_;	
+	global isThisEle2ndLevelIncludingFixedDOFsOn1stLevel_ uniqueKesFixed_ uniqueKesFree_ sonElesWithFixedDOFs_ mapUniqueKes_;
+    global cholFac_ cholPermut_;
 	
 	%% Compute 'Ks' on Coarser Levels
 	reOrdering = [1 9 17 2 10 18 3 11 19 4 12 20 5 13 21 6 14 22 7 15 23 8 16 24];
@@ -963,6 +936,7 @@ function Solving_AssembleFEAstencil()
 		eDofMat4Finer2Coarser = eDofMat4Finer2Coarser(:, reOrdering);
 		iK = eDofMat4Finer2Coarser(:,rowIndice)';
 		jK = eDofMat4Finer2Coarser(:,colIndice)';
+		numProjectEles = spanWidth^3;
 		numProjectNodes = (spanWidth+1)^3;
 		numProjectDOFs = numProjectNodes*3;
 		localMapping = iK(:) + (jK(:)-1)*numProjectDOFs; localMapping = int32(localMapping);
@@ -970,37 +944,42 @@ function Solving_AssembleFEAstencil()
 		meshHierarchy_(ii).Ke = meshHierarchy_(ii-1).Ke*spanWidth;
 		numElements = meshHierarchy_(ii).numElements;	
 		diagK = zeros(meshHierarchy_(ii).numNodes,3);
-		finerKes = zeros(24*24,spanWidth^3);
+		finerKes = zeros(24*24,numProjectEles);
 		elementUpwardMap = meshHierarchy_(ii).elementUpwardMap;
 		%%Compute Element Stiffness Matrices on Coarser Levels
-		if 2==ii			
+		if 2==ii
 			iKe = meshHierarchy_(ii-1).Ke;
-			iKs = reshape(iKe, 24*24, 1);
+			iKs = iKe(:);
 			eleModulus = meshHierarchy_(1).eleModulus;
-			Ks = repmat(meshHierarchy_(ii).Ke, 1,1,numElements);
-			isThisEle2ndLevelIncludingFixedDOFsOn1stLevel = isThisEle2ndLevelIncludingFixedDOFsOn1stLevel_;
-			sonElesWithFixedDOFs = sonElesWithFixedDOFs_;
-			mapAllElements2ElementsWithFixedDOFs = mapUniqueKes_;
-			uniqueKeListFixedDOFs = uniqueKesFixed_;
-			uniqueKeListFreeDOFs = uniqueKesFree_;
-			if isempty(gcp('nocreate')), parpool('threads'); end			
+			sKtemplate = zeros(24,24,numProjectEles);
+			for ss=1:numProjectEles
+				tmpK = sparse(iK(:,ss), jK(:,ss), iKe(:), numProjectDOFs, numProjectDOFs);
+				sKtemplate(:,:,ss) = full(interpolatingKe' * tmpK * interpolatingKe);
+			end
+			Ks = zeros(24,24,numElements);
+			if isempty(gcp('nocreate')), parpool('threads'); end
 			parfor jj=1:numElements
+				idx = isThisEle2ndLevelIncludingFixedDOFsOn1stLevel_(jj);
 				sonEles = elementUpwardMap(jj,:);
-				solidEles = find(0~=sonEles);
-				sK = finerKes;
-				sK(:,solidEles) = iKs .* eleModulus(sonEles(solidEles));
-				idx = isThisEle2ndLevelIncludingFixedDOFsOn1stLevel(jj);
-				if idx
-					sonElesLocal = sonElesWithFixedDOFs(idx).arr;
+				solidEles = find(0~=sonEles);				
+				if idx>0 %% unique Ke
+					sK = finerKes;
+					sK(:,solidEles) = iKs .* eleModulus(sonEles(solidEles));
+					sonElesLocal = sonElesWithFixedDOFs_(idx).arr;
 					sonElesGlobal = sonEles(sonElesLocal);
-					sonElesIntermediate = mapAllElements2ElementsWithFixedDOFs(sonElesGlobal);
-					sK(:,sonElesLocal) = uniqueKeListFreeDOFs(:,sonElesIntermediate) .* eleModulus(1,sonElesGlobal) + ...
-						uniqueKeListFixedDOFs(:,sonElesIntermediate);
-				end		
-				tmpK = sparse(iK, jK, sK, numProjectDOFs, numProjectDOFs);
-				tmpK = interpolatingKe' * tmpK * interpolatingKe;
-				Ks(:,:,jj) = full(tmpK);				
-			end	
+					sonElesIntermediate = mapUniqueKes_(sonElesGlobal);
+					sK(:,sonElesLocal) = uniqueKesFree_(:,sonElesIntermediate) .* eleModulus(1,sonElesGlobal) + ...
+						uniqueKesFixed_(:,sonElesIntermediate);	
+					tmpK = sparse(iK, jK, sK, numProjectDOFs, numProjectDOFs);
+					tmpK = interpolatingKe' * tmpK * interpolatingKe;
+					Ks(:,:,jj) = full(tmpK);
+				else %% identical Ke
+					jEList = zeros(1,1,numProjectEles);
+					jEList(1,1,solidEles) = eleModulus(sonEles(solidEles));
+					jKs = sKtemplate .* jEList;
+					Ks(:,:,jj) = sum(jKs,3);					
+				end
+			end		
 		else
             KsPrevious = Ks; clear Ks;
 			Ks = repmat(meshHierarchy_(ii).Ke, 1,1,numElements);
@@ -1057,8 +1036,8 @@ function Solving_AssembleFEAstencil()
 		eleWithFixedDOFsLocal = jTarEles(eleWithFixedDOFs);
 		numTarEles = numel(eleWithFixedDOFs);
 		for kk=1:numTarEles
-			kKeFreeDOFs = reshape(uniqueKeListFreeDOFs(:,eleWithFixedDOFsLocal(kk)), 24, 24);
-			kKeFixedDOFs = reshape(uniqueKeListFixedDOFs(:,eleWithFixedDOFsLocal(kk)), 24, 24);
+			kKeFreeDOFs = reshape(uniqueKesFree_(:,eleWithFixedDOFsLocal(kk)), 24, 24);
+			kKeFixedDOFs = reshape(uniqueKesFixed_(:,eleWithFixedDOFsLocal(kk)), 24, 24);
 			diagKeBlock(:,eleWithFixedDOFs(kk)) = diag(kKeFreeDOFs) * jEleModulus(eleWithFixedDOFs(kk)) + ...
 				diag(kKeFixedDOFs);
 		end
@@ -1097,10 +1076,8 @@ function blockIndex = Solving_MissionPartition(totalSize, blockSize)
 end
 
 function Solving_BuildingMeshHierarchy()
-	global meshHierarchy_;
-	global numLevels_;
+	global meshHierarchy_ numLevels_ nonDyadic_;
 	global eNodMatHalfTemp_;
-	global nonDyadic_;
 	
 	if numel(meshHierarchy_)>1, return; end
 	%%0. global ordering of nodes on each levels
@@ -1462,7 +1439,7 @@ function [oKeFreeDOFs, oKeFixedDOFs] = Solving_ApplyBConEleStiffMat_B(iKeFreeDOF
 end
 
 function tarBC = AdaptBCExternalMdl(srcBC, adjustedRes)
-	global nelx_; global nely_; global nelz_;
+	global nelx_ nely_ nelz_;
 	nullNodeVolume = zeros((nelx_+1)*(nely_+1)*(nelz_+1),1);
 	
 	adjustedNnlx = adjustedRes(1);
@@ -1514,7 +1491,7 @@ function tarBC = AdaptBCExternalMdl(srcBC, adjustedRes)
 end
 
 function adjustedVoxelIndices = AdaptPassiveElementsExternalMdl(srcElesMapback, adjustedRes)
-	global nelx_; global nely_; global nelz_;
+	global nelx_ nely_ nelz_;
 	nullVoxelVolume = zeros(nelx_*nely_*nelz_,1);
 	
 	adjustedNelx = adjustedRes(1);
@@ -1535,8 +1512,7 @@ end
 
 function [passiveElementsOnBoundary, passiveElementsNearLoads, passiveElementsNearFixation] = TopOpti_SetPassiveElements(numLayerboundary, numLayerLoads, numLayerFixation)
 	global meshHierarchy_;
-	global loadingCond_;
-	global fixingCond_;
+	global loadingCond_ fixingCond_;
 	global passiveElements_; 
 	
 	numLayerboundary = round(numLayerboundary);
@@ -1564,7 +1540,6 @@ function [passiveElementsOnBoundary, passiveElementsNearLoads, passiveElementsNe
 		allElements(meshHierarchy_(1).elementsOnBoundary) = 1;
 		nodeStruct_ = struct('arr', []);
 		nodeStruct_ = repmat(nodeStruct_, meshHierarchy_(1).numNodes, 1);
-		boundaryNodes_Temp = [];
 		numNodsPerEle = 8;
 		for ii=1:meshHierarchy_(1).numElements
 			if 0 || allElements(ii) %%switch 0 to 1 for non-boundary fixation situations, efficiency loss
@@ -1620,25 +1595,10 @@ function oEleList = Common_IncludeAdjacentElements(iEleList)
 	resX = meshHierarchy_(1).resX;
 	resY = meshHierarchy_(1).resY;
 	resZ = meshHierarchy_(1).resZ;
-	if 1
-		[eleX, eleY, eleZ] = Common_NodalizeDesignDomain([resX-1 resY-1 resZ-1], [1 1 1; resX resY resZ]);
-		eleX = eleX(iEleListMapBack);
-		eleY = eleY(iEleListMapBack);
-		eleZ = eleZ(iEleListMapBack);
-	else
-		numSeed = [resX-1 resY-1 resZ-1];
-		nx = numSeed(1); ny = numSeed(2); nz = numSeed(3);
-		dd = [1 1 1; resX resY resZ];
-		xSeed = dd(1,1):(dd(2,1)-dd(1,1))/nx:dd(2,1);
-		ySeed = dd(2,2):(dd(1,2)-dd(2,2))/ny:dd(1,2);
-		zSeed = dd(1,3):(dd(2,3)-dd(1,3))/nz:dd(2,3);
-		tmp = repmat(reshape(repmat(xSeed,ny+1,1), (nx+1)*(ny+1), 1), (nz+1), 1);
-		eleX = tmp(iEleListMapBack);
-		tmp = repmat(repmat(ySeed,1,nx+1)', (nz+1), 1);
-		eleY = tmp(iEleListMapBack);
-		tmp = reshape(repmat(zSeed,(nx+1)*(ny+1),1), (nx+1)*(ny+1)*(nz+1), 1);
-		eleZ = tmp(iEleListMapBack);	
-	end
+	[eleX, eleY, eleZ] = Common_NodalizeDesignDomain([resX-1 resY-1 resZ-1], [1 1 1; resX resY resZ]);
+	eleX = eleX(iEleListMapBack);
+	eleY = eleY(iEleListMapBack);
+	eleZ = eleZ(iEleListMapBack);
 	
 	tmpX = [eleX-1 eleX-1 eleX-1  eleX eleX eleX  eleX+1 eleX+1 eleX+1];
 	tmpX = [tmpX tmpX tmpX]; tmpX = tmpX(:);
@@ -1657,94 +1617,23 @@ function oEleList = Common_IncludeAdjacentElements(iEleList)
 end
 
 function val = Solving_SubEleNodMat(spanWidth)
-	switch spanWidth
-		case 2
-			val = [ 2 	5 	4 	1 	11 	14 	13 	10
-					3 	6 	5 	2 	12 	15 	14 	11
-					6 	9 	8 	5 	15 	18 	17 	14
-					5 	8 	7 	4 	14 	17 	16 	13
-					11 	14 	13 	10 	20 	23 	22 	19
-					12 	15 	14 	11 	21 	24 	23 	20
-					15 	18 	17 	14 	24 	27 	26 	23
-					14 	17 	16 	13 	23 	26 	25 	22];
-		case 4
-			val = [ 2	7	6	1	27	32	31	26
-					3	8	7	2	28	33	32	27
-					4	9	8	3	29	34	33	28
-					5	10	9	4	30	35	34	29
-					7	12	11	6	32	37	36	31
-					8	13	12	7	33	38	37	32
-					9	14	13	8	34	39	38	33
-					10	15	14	9	35	40	39	34
-					12	17	16	11	37	42	41	36
-					13	18	17	12	38	43	42	37
-					14	19	18	13	39	44	43	38
-					15	20	19	14	40	45	44	39
-					17	22	21	16	42	47	46	41
-					18	23	22	17	43	48	47	42
-					19	24	23	18	44	49	48	43
-					20	25	24	19	45	50	49	44
-					27	32	31	26	52	57	56	51		
-					28	33	32	27	53	58	57	52
-					29	34	33	28	54	59	58	53
-					30	35	34	29	55	60	59	54
-					32	37	36	31	57	62	61	56
-					33	38	37	32	58	63	62	57
-					34	39	38	33	59	64	63	58
-					35	40	39	34	60	65	64	59
-					37	42	41	36	62	67	66	61
-					38	43	42	37	63	68	67	62
-					39	44	43	38	64	69	68	63
-					40	45	44	39	65	70	69	64
-					42	47	46	41	67	72	71	66
-					43	48	47	42	68	73	72	67
-					44	49	48	43	69	74	73	68
-					45	50	49	44	70	75	74	69
-					52	57	56	51	77	82	81	76		
-					53	58	57	52	78	83	82	77
-					54	59	58	53	79	84	83	78
-					55	60	59	54	80	85	84	79
-					57	62	61	56	82	87	86	81
-					58	63	62	57	83	88	87	82
-					59	64	63	58	84	89	88	83
-					60	65	64	59	85	90	89	84
-					62	67	66	61	87	92	91	86
-					63	68	67	62	88	93	92	87
-					64	69	68	63	89	94	93	88
-					65	70	69	64	90	95	94	89
-					67	72	71	66	92	97	96	91
-					68	73	72	67	93	98	97	92
-					69	74	73	68	94	99	98	93
-					70	75	74	69	95	100	99	94
-					77	82	81	76	102	107	106	101
-					78	83	82	77	103	108	107	102
-					79	84	83	78	104	109	108	103
-					80	85	84	79	105	110	109	104
-					82	87	86	81	107	112	111	106
-					83	88	87	82	108	113	112	107
-					84	89	88	83	109	114	113	108
-					85	90	89	84	110	115	114	109
-					87	92	91	86	112	117	116	111
-					88	93	92	87	113	118	117	112
-					89	94	93	88	114	119	118	113
-					90	95	94	89	115	120	119	114
-					92	97	96	91	117	122	121	116
-					93	98	97	92	118	123	122	117
-					94	99	98	93	119	124	123	118
-					95	100	99	94	120	125	124	119];
-		otherwise
-			error('Wrong input of span width!')
+	if ~(2==spanWidth || 4==spanWidth)
+		error('Wrong Span Width!');
 	end
+	nx = spanWidth; ny = nx; nz = nx;
+	nodenrs = reshape(1:(nx+1)*(ny+1)*(nz+1), 1+ny, 1+nx, 1+nz);
+	eNodVec = reshape(nodenrs(1:end-1,1:end-1,1:end-1)+1, nx*ny*nz, 1);
+	val = repmat(eNodVec,1,8);	
+	tmp = [0 ny+[1 0] -1 (ny+1)*(nx+1)+[0 ny+[1 0] -1]];
+	val = val + repmat(tmp, nx*ny*nz, 1);
 end
 
 function FEA_VoxelBasedDiscretization()	
-	global nelx_; global nely_; global nelz_;
-	global boundingBox_;
-	global voxelizedVolume_; 
+	global nelx_ nely_ nelz_;
+	global boundingBox_ voxelizedVolume_; 
 	global meshHierarchy_;
-	global coarsestResolutionControl_;
+	global coarsestResolutionControl_ numLevels_;
 	global eNodMatHalfTemp_;
-	global numLevels_;
 	%    z
 	%    |__ x
 	%   / 
@@ -1879,168 +1768,35 @@ function val = Data_CartesianMeshStruct()
 end
 
 function ss = Solving_Operator4MultiGridRestrictionAndInterpolation(opt, spanWidth)
-	switch spanWidth
-		case 2
-			ss = [  0		0		0		1		0		0		0		0
-					0.5		0		0		0.5		0		0		0		0
-					1		0		0		0		0		0		0		0
-					0		0		0.5		0.5		0		0		0		0
-					0.25	0.25	0.25	0.25	0		0		0		0
-					0.5		0.5		0		0		0		0		0		0
-					0		0		1		0		0		0		0		0
-					0		0.5		0.5		0		0		0		0		0
-					0		1		0		0		0		0		0		0
-					0		0		0		0.5		0		0		0		0.5
-					0.25	0		0		0.25	0.25	0		0		0.25
-					0.5		0		0		0		0.5		0		0		0
-					0		0		0.25	0.25	0		0		0.25	0.25
-					0.125	0.125	0.125	0.125	0.125	0.125	0.125	0.125
-					0.25	0.25	0		0		0.25	0.25	0		0
-					0		0		0.5		0		0		0		0.5		0
-					0		0.25	0.25	0		0		0.25	0.25	0
-					0		0.5		0		0		0		0.5		0		0
-					0		0		0		0		0		0		0		1
-					0		0		0		0		0.5		0		0		0.5
-					0		0		0		0		1		0		0		0
-					0		0		0		0		0		0		0.5		0.5
-					0		0		0		0		0.25	0.25	0.25	0.25
-					0		0		0		0		0.5		0.5		0		0
-					0		0		0		0		0		0		1		0
-					0		0		0		0		0		0.5		0.5		0
-					0		0		0		0		0		1		0		0];			
-		case 4
-			ss = [  0			0			0			1			0			0			0			0
-					0.25		0			0			0.75		0			0			0			0
-					0.50		0			0			0.50		0			0			0			0
-					0.75		0			0			0.25		0			0			0			0
-					1			0			0			0			0			0			0			0
-					0			0			0.2500		0.7500		0			0			0			0
-					0.1875		0.0625		0.1875		0.5625		0			0			0			0
-					0.3750		0.1250		0.1250		0.3750		0			0			0			0
-					0.5625		0.1875		0.0625		0.1875		0			0			0			0
-					0.7500		0.25		0			0			0			0			0			0
-					0			0			0.50		0.5			0			0			0			0
-					0.125		0.125		0.375		0.375		0			0			0			0
-					0.250		0.250		0.250		0.250		0			0			0			0
-					0.375		0.375		0.125		0.125		0			0			0			0
-					0.500		0.500		0			0			0			0			0			0
-					0			0			0.750		0.25		0			0			0			0
-					0.0625		0.1875		0.5625		0.1875		0			0			0			0
-					0.1250		0.3750		0.3750		0.1250		0			0			0			0
-					0.1875		0.5625		0.1875		0.0625		0			0			0			0
-					0.2500		0.7500		0			0			0			0			0			0
-					0			0			1			0			0			0			0			0
-					0			0.25		0.75		0			0			0			0			0
-					0			0.50		0.50		0			0			0			0			0
-					0			0.75		0.25		0			0			0			0			0
-					0			1			0			0			0			0			0			0
-					0			0			0			0.75		0			0			0			0.25
-					0.1875		0			0			0.5625		0.0625		0			0			0.1875
-					0.3750		0			0			0.3750		0.1250		0			0			0.1250
-					0.5625		0			0			0.1875		0.1875		0			0			0.0625
-					0.7500		0			0			0			0.25		0			0			0
-					0			0			0.1875		0.5625		0			0			0.0625		0.1875
-					0.140625	0.046875	0.140625	0.421875	0.046875	0.015625	0.046875	0.140625
-					0.281250	0.093750	0.093750	0.281250	0.093750	0.031250	0.031250	0.093750
-					0.421875	0.140625	0.046875	0.140625	0.140625	0.046875	0.015625	0.046875
-					0.562500	0.187500	0			0			0.1875		0.0625		0			0
-					0			0			0.375		0.375		0			0			0.125		0.125
-					0.09375		0.09375		0.28125		0.28125		0.03125		0.03125		0.09375		0.09375
-					0.18750		0.18750		0.18750		0.18750		0.06250		0.06250		0.06250		0.06250
-					0.28125		0.28125		0.09375		0.09375		0.09375		0.09375		0.03125		0.03125
-					0.37500		0.37500		0			0			0.125		0.125		0			0
-					0			0			0.5625		0.1875		0			0			0.1875		0.0625
-					0.046875	0.140625	0.421875	0.140625	0.015625	0.046875	0.140625	0.046875
-					0.093750	0.281250	0.281250	0.093750	0.031250	0.093750	0.093750	0.031250
-					0.140625	0.421875	0.140625	0.046875	0.046875	0.140625	0.046875	0.015625
-					0.187500	0.562500	0			0			0.0625		0.1875		0			0
-					0			0			0.75		0			0			0			0.25		0
-					0			0.1875		0.5625		0			0			0.0625		0.1875		0
-					0			0.3750		0.3750		0			0			0.1250		0.1250		0
-					0			0.5625		0.1875		0			0			0.1875		0.0625		0
-					0			0.75		0			0			0			0.25		0			0
-					0			0			0			0.5	0		0			0			0.5
-					0.125		0			0			0.375		0.125		0			0			0.375
-					0.250		0			0			0.250		0.250		0			0			0.250
-					0.375		0			0			0.125		0.375		0			0			0.125
-					0.5			0			0			0			0.5			0			0			0
-					0			0			0.125		0.375		0			0			0.125		0.375
-					0.09375		0.03125		0.09375		0.28125		0.09375		0.03125		0.09375		0.28125
-					0.18750		0.06250		0.06250		0.18750		0.18750		0.06250		0.06250		0.18750
-					0.28125		0.09375		0.03125		0.09375		0.28125		0.09375		0.03125		0.09375
-					0.37500		0.12500		0			0			0.375		0.125		0			0
-					0			0			0.25		0.25		0			0			0.25		0.25
-					0.0625		0.0625		0.1875		0.1875		0.0625		0.0625		0.1875		0.1875
-					0.1250		0.1250		0.1250		0.1250		0.1250		0.1250		0.1250		0.1250
-					0.1875		0.1875		0.0625		0.0625		0.1875		0.1875		0.0625		0.0625
-					0.2500		0.2500		0			0			0.25		0.2500		0			0
-					0			0			0.375		0.125		0			0			0.375		0.125
-					0.03125		0.09375		0.28125		0.09375		0.03125		0.09375		0.28125		0.09375
-					0.06250		0.18750		0.18750		0.06250		0.06250		0.18750		0.18750		0.06250
-					0.09375		0.28125		0.09375		0.03125		0.09375		0.28125		0.09375		0.03125
-					0.12500		0.37500		0			0			0.125		0.375		0			0
-					0			0			0.5			0			0			0			0.5			0
-					0			0.125		0.375		0			0			0.125		0.375		0
-					0			0.250		0.250		0			0			0.250		0.250		0
-					0			0.375		0.125		0			0			0.375		0.125		0
-					0			0.500		0			0			0			0.5			0			0
-					0			0			0			0.25		0			0			0			0.75
-					0.0625		0			0			0.1875		0.1875		0			0			0.5625
-					0.1250		0			0			0.1250		0.3750		0			0			0.3750
-					0.1875		0			0			0.0625		0.5625		0			0			0.1875
-					0.2500		0			0			0			0.75		0			0			0
-					0			0			0.0625		0.1875		0			0			0.1875		0.5625
-					0.046875	0.015625	0.046875	0.140625	0.140625	0.046875	0.140625	0.421875
-					0.093750	0.031250	0.031250	0.093750	0.281250	0.093750	0.093750	0.281250
-					0.140625	0.046875	0.015625	0.046875	0.421875	0.140625	0.046875	0.140625
-					0.187500	0.062500	0			0			0.5625		0.1875		0			0
-					0			0			0.125		0.125		0			0			0.375		0.375
-					0.03125		0.03125		0.09375		0.09375		0.09375		0.09375		0.28125		0.28125
-					0.06250		0.06250		0.06250		0.06250		0.18750		0.18750		0.18750		0.18750
-					0.09375		0.09375		0.03125		0.03125		0.28125		0.28125		0.09375		0.09375
-					0.12500		0.12500		0			0			0.37500		0.37500		0			0
-					0			0			0.1875		0.0625		0			0			0.5625		0.1875
-					0.015625	0.046875	0.140625	0.046875	0.046875	0.140625	0.421875	0.140625
-					0.031250	0.093750	0.093750	0.031250	0.093750	0.281250	0.281250	0.093750
-					0.046875	0.140625	0.046875	0.015625	0.140625	0.421875	0.140625	0.046875
-					0.062500	0.187500	0			0			0.1875		0.5625		0			0
-					0			0			0.25		0			0			0			0.7500		0
-					0			0.0625		0.1875		0			0			0.1875		0.5625		0
-					0			0.1250		0.1250		0			0			0.3750		0.3750		0
-					0			0.1875		0.0625		0			0			0.5625		0.1875		0
-					0			0.2500		0			0			0			0.75		0			0
-					0			0			0			0			0			0			0			1
-					0			0			0			0			0.25		0			0			0.75
-					0			0			0			0			0.50		0			0			0.50
-					0			0			0			0			0.75		0			0			0.25
-					0			0			0			0			1			0			0			0
-					0			0			0			0			0			0			0.25		0.75
-					0			0			0			0			0.1875		0.0625		0.1875		0.5625
-					0			0			0			0			0.3750		0.1250		0.1250		0.3750
-					0			0			0			0			0.5625		0.1875		0.0625		0.1875
-					0			0			0			0			0.7500		0.2500		0			0
-					0			0			0			0			0			0			0.5			0.5
-					0			0			0			0			0.125		0.125		0.375		0.375
-					0			0			0			0			0.250		0.250		0.250		0.250
-					0			0			0			0			0.375		0.375		0.125		0.125
-					0			0			0			0			0.500		0.500		0			0
-					0			0			0			0			0			0			0.75		0.25
-					0			0			0			0			0.0625		0.1875		0.5625		0.1875
-					0			0			0			0			0.1250		0.3750		0.3750		0.1250
-					0			0			0			0			0.1875		0.5625		0.1875		0.0625
-					0			0			0			0			0.2500		0.7500		0			0
-					0			0			0			0			0			0			1			0
-					0			0			0			0			0			0.25		0.75		0
-					0			0			0			0			0			0.50		0.50		0
-					0			0			0			0			0			0.75		0.25		0
-					0			0			0			0			0			1			0			0];
-		otherwise
-			error('Wrong Span Width!');
+	if ~(2==spanWidth || 4==spanWidth)
+		error('Wrong Span Width!');
 	end
+	sampY = linspace(1,-1,spanWidth+1);
+	sampX = linspace(-1,1,spanWidth+1);
+	sampZ = linspace(-1,1,spanWidth+1);
+	sampY = repmat(sampY(:), (spanWidth+1)^2, 1);
+	sampX = repmat(sampX, spanWidth+1, 1); sampX = repmat(sampX(:), spanWidth+1, 1);
+	sampZ = repmat(sampZ, (spanWidth+1)^2, 1); sampZ = sampZ(:);
+	ss = Solving_TrilinearInterpolation([sampX sampY sampZ]);
 	if strcmp(opt, 'inDOF')
 		ss = kron(ss, eye(3));
 	end
 	ss = sparse(ss);
+end
+
+function N = Solving_TrilinearInterpolation(paras)
+	s = paras(:,1);
+	t = paras(:,2);
+	p = paras(:,3);
+	N = zeros(size(paras,1), 8);
+	N(:,1) = 0.125*(1-s).*(1-t).*(1-p);
+	N(:,2) = 0.125*(1+s).*(1-t).*(1-p);
+	N(:,3) = 0.125*(1+s).*(1+t).*(1-p);
+	N(:,4) = 0.125*(1-s).*(1+t).*(1-p);
+	N(:,5) = 0.125*(1-s).*(1-t).*(1+p);
+	N(:,6) = 0.125*(1+s).*(1-t).*(1+p);
+	N(:,7) = 0.125*(1+s).*(1+t).*(1+p);
+	N(:,8) = 0.125*(1-s).*(1+t).*(1+p);		
 end
 
 %% This MMA implementation is a translation of the c-version developed by Niles Aage at the DTU
