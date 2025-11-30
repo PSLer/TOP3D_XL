@@ -615,10 +615,10 @@ function [y, varargout] = Solving_PCG(AtX, PtV, b, tol, maxIT, printP, varargin)
 	pVec = zVec;
 	x1Val = zVec' * rVec1;
 	for its=1:maxIT
-		vVec = AtX(pVec);
-		lambda = x1Val / (pVec' * vVec);
+		zVec = AtX(pVec);
+		lambda = x1Val / (pVec' * zVec);
 		y = y + lambda * pVec;
-		rVec1 = rVec1 - lambda*vVec;
+		rVec1 = rVec1 - lambda*zVec;
 		resnorm = norm(rVec1)/normB;
 		if printP(1)
 			disp([' It.: ' sprintf('%4i',its) ' Res.: ' sprintf('%16.6e',resnorm)]);
@@ -921,7 +921,7 @@ function Y = MatTimesVec_matrixFree_B(uVec)
 end
 
 function Solving_AssembleFEAstencil()
-	global meshHierarchy_ numLevels_;	
+	global meshHierarchy_ numLevels_ typeVcycle_;	
 	global isThisEle2ndLevelIncludingFixedDOFsOn1stLevel_ uniqueKesFixed_ uniqueKesFree_ sonElesWithFixedDOFs_ mapUniqueKes_;
     global cholFac_ cholPermut_;
 	
@@ -997,8 +997,10 @@ function Solving_AssembleFEAstencil()
 				tmpK = interpolatingKe' * tmpK * interpolatingKe;
 				Ks(:,:,jj) = full(tmpK);				
 			end				
-		end			
-		meshHierarchy_(ii).Ks = Ks;
+		end	
+		if strcmp(typeVcycle_, 'Standard')
+			meshHierarchy_(ii).Ks = Ks;
+		end
 		%%Initialize Jacobian Smoother on Coarser Levels
 		if ii<numLevels_
 			blockIndex = Solving_MissionPartition(numElements, 1.0e7);
