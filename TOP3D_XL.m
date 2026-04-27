@@ -279,8 +279,6 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 	xTilde = x;
     xPhys = x;
 	
-	xold1 = x(activeEles);	
-	xold2 = xold1;
 	loopbeta = 0; 
 	loop = 0;
 	change = 1.0;
@@ -353,6 +351,8 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 		itimeDensityFiltering = itimeDensityFiltering + toc(tPDEfilteringClock);
 		
 		tOptimizationClock = tic;
+		iter = loop;
+		if 1==iter, xold1 = x(activeEles); xold2 = xold1; low = zeros(size(activeEles(:))); upp = low; end	
 		move = 0.1;
 		m = 1;
 		n = numel(activeEles);
@@ -363,27 +363,25 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 		dfdx_MMA = dfdx(:,activeEles);
 		xmin_MMA = max(0.0,xval_MMA-move);
 		xmax_MMA = min(1,xval_MMA+move);			
-		[xmma_MMA, xold1, xold2] = MMAseq(m, n, xval_MMA, xmin_MMA, xmax_MMA, xold1, xold2, df0dx_MMA, fval, dfdx_MMA(:));	
+		% [xmma_MMA, xold1, xold2] = MMAseq(m, n, xval_MMA, xmin_MMA, xmax_MMA, xold1, xold2, df0dx_MMA, fval, dfdx_MMA(:));	
+		[xmma_MMA, xold1, xold2, low, upp] = MMAseq(m, n, iter, xval_MMA, xmin_MMA, xmax_MMA, xold1, xold2, df0dx_MMA, fval, dfdx_MMA, low, upp);
 		change = max(abs(xmma_MMA(:)-xval_MMA(:)));	
 		x = onesArrSingle; x(activeEles) = xmma_MMA;	
 		itimeOptimization = itimeOptimization + toc(tOptimizationClock);
 		
+		%%5.5 Prepare for next iteration
 		tPDEfilteringClock = tic;
 		xTilde = TopOpti_ConductPDEFiltering_matrixFree(x, PDEkernal4Filtering, diagPrecond4Filtering);	
+		if loopbeta >= 40
+			betaPIO = min(2*betaPIO, pMaxPIO);
+			loopbeta = 0;
+			fprintf('Parameter beta increased to %g.\n',betaPIO);			
+		end
 		xPhys = (tanh(betaPIO*etaPIO) + tanh(betaPIO*(xTilde-etaPIO))) / (tanh(betaPIO*etaPIO) + tanh(betaPIO*(1-etaPIO)));
-		itimeDensityFiltering = itimeDensityFiltering + toc(tPDEfilteringClock);			
-		
 		xPhys(passiveElements) = 1;
-		sharpness = 4*sum(sum(xPhys.*(ones(numElements,1)-xPhys)))/numElements;	
+		sharpness = 4*sum(sum(xPhys.*(ones(numElements,1)-xPhys)))/numElements;			
+		itimeDensityFiltering = itimeDensityFiltering + toc(tPDEfilteringClock);			
 		itimeTotal = toc(perIteCost);
-		
-		%%5.5 write opti. history
-		cHist(loop,1) = cDesign;
-		volHist(loop,1) = V;
-		consHist(loop,:) = fval;
-		sharpHist(loop,1) = sharpness;
-		iTimeStatistics = [itSolvingFEAssembling itSolvingFEAiteration itimeOptimization itimeDensityFiltering itimeLocalVolumeConstraint itimeTotal];
-		tHist(loop,:) = iTimeStatistics;
 		
 		%%5.6 print results
 		fprintf(' It.:%4i Obj.:%16.8e Vol.:%6.4e Sharp.:%6.4e Cons.:%4.2e  Ch.:%4.2e \n',...
@@ -392,16 +390,14 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 			sprintf('%8.2e',itSolvingFEAssembling), 's; CG: ', sprintf('%8.2e',itSolvingFEAiteration), ...
 				's; Opti.: ', sprintf('%8.2e',itimeOptimization), 's; Filtering: ', sprintf('%8.2e',itimeDensityFiltering), ...
 					's; LVF: ', sprintf('%8.2e',itimeLocalVolumeConstraint) 's.']);	
-
-		%%5.7 update Heaviside regularization parameter
-		if betaPIO < pMaxPIO && loopbeta >= 40
-			betaPIO = 2*betaPIO;
-			loopbeta = 0;
-			change = 1.0;
-			sharpness = 1.0;
-			fprintf('Parameter beta increased to %g.\n',betaPIO);			
-		end
-				
+					
+		%%5.7 write opti. history
+		cHist(loop,1) = cDesign;
+		volHist(loop,1) = V;
+		consHist(loop,:) = fval;
+		sharpHist(loop,1) = sharpness;
+		iTimeStatistics = [itSolvingFEAssembling itSolvingFEAiteration itimeOptimization itimeDensityFiltering itimeLocalVolumeConstraint itimeTotal];
+		tHist(loop,:) = iTimeStatistics;					
 	end
 	densityLayout_ = xPhys(:);
 	fileName = strcat(outPath, 'DesignVolume.nii');
@@ -1802,213 +1798,250 @@ function N = Solving_TrilinearInterpolation(paras)
 end
 
 %% This MMA implementation is a translation of the c-version developed by Niles Aage at the DTU
-function [xnew, xold1, xold2] = MMAseq(mm, nn, xvalTmp, xmin, xmax, xold1, xold2, dfdx, gx, dgdx)
-	global n; n = nn;
-	global m; m = mm;
+%%function [xnew, xold1, xold2] = MMAseq(mm, nn, xvalTmp, xmin, xmax, xold1, xold2, dfdx, gx, dgdx)
+
+%% This MMA implementation is aMMA_ translation of the cMMA_-version developed by Niles Aage at the DTU
+function [xnew, xold1, xold2, low, upp] = MMAseq(mm, nn, iter, xvalTmp, xmin, xmax, xold1, xold2, dfdx, gx, dgdx, low, upp)
+	global nMMA_; nMMA_ = nn;
+	global mMMA_; mMMA_ = mm;
 	
-	global asyminit; asyminit = 0.5;%%0.2;
-	global asymdec; asymdec = 0.7;%%0.65;
-	global asyminc; asyminc = 1.2;%%1.08;	
+	global asyminitMMA_; asyminitMMA_ = 0.5;%%0.2;
+	global asymdecMMA_; asymdecMMA_ = 0.7;%%0.65;
+	global asymincMMA_; asymincMMA_ = 1.2;%%1.08;		
 	
-	global k; k = 0;
+	global kMMA_; kMMA_ = iter;
 	
-	global a; a = zeros(m,1);
-	global c; c = 100.0 * ones(m,1);
-	global d; d = zeros(m,1);
+	global aMMA_; aMMA_ = zeros(mMMA_,1);
+	global cMMA_; cMMA_ = 1000.0 * ones(mMMA_,1);
+	global dMMA_; dMMA_ = zeros(mMMA_,1);
 	
-	global y; y = zeros(m,1);
-	global z; z = 0;
-	global lam; lam = zeros(m,1);
+	global yMMA_; yMMA_ = zeros(mMMA_,1);
+	global zMMA_; zMMA_ = 0;
+	global lamMMA_; lamMMA_ = zeros(mMMA_,1);
 	
-	global L; L = zeros(1,n);
-	global U; U = zeros(1,n);
+	global lowMMA_; lowMMA_ = low(:)';
+	global uppMMA_; uppMMA_ = upp(:)';
 	
-	global alpha; alpha = zeros(1,n);
-	global beta; beta = zeros(1,n);
+	global alphaMMA_; alphaMMA_ = zeros(1,nMMA_);
+	global betaMMA_; betaMMA_ = zeros(1,nMMA_);
 	
-	global p0; p0 = zeros(1,n);
-	global q0; q0 = zeros(1,n);
-	global pij; pij = zeros(m,n);
-	global qij; qij = zeros(m,n); 
-	global b; b = zeros(m,1);
+	global p0MMA_; p0MMA_ = zeros(1,nMMA_);
+	global q0MMA_; q0MMA_ = zeros(1,nMMA_);
+	global pijMMA_; pijMMA_ = zeros(mMMA_,nMMA_);
+	global qijMMA_; qijMMA_ = zeros(mMMA_,nMMA_); 
+	global bMMA_; bMMA_ = zeros(mMMA_,1);
 	
-	global xo1; xo1 = xold1;
-	global xo2; xo2 = xold2;
+	global xold1MMA_; xold1MMA_ = xold1(:)';
+	global xold2MMA_; xold2MMA_ = xold2(:)';
 	
-	global grad; grad = zeros(m,1);
-	global mu; mu = zeros(m,1);
-	global s; s = zeros(2*m,1);
-	global Hess; Hess = zeros(m,m);
+	global gradMMA_; gradMMA_ = zeros(mMMA_,1);
+	global muMMA_; muMMA_ = zeros(mMMA_,1);
+	global sMMA_; sMMA_ = zeros(2*mMMA_,1);
+	global HessMMA_; HessMMA_ = zeros(mMMA_,mMMA_);
 	
-	global xVal; xVal = xvalTmp(:)';
+	global xValMMA_; xValMMA_ = xvalTmp(:)';
+	global constraintModificationMMA_; constraintModificationMMA_ = true;
 	
-	Update(dfdx(:)', gx(:), reshape(dgdx,n,m)', xmin(:)', xmax(:)');
-	xnew = xVal(:); xold1 = xo1(:); xold2 = xo2(:);
+	%Update(dfdx(:)', gx(:), reshape(dgdx,nMMA_,mMMA_)', xmin(:)', xmax(:)');
+	[rowCheck, colCheck] = size(dgdx);
+	if ~(mMMA_==rowCheck && nMMA_==colCheck)
+		error('Sensitivities of constraint(s) must be arranged in an m-by-n array, each column represent the sensitivity values of different constraint functions of this element!');
+	end
+	Update(dfdx(:)', gx(:), dgdx, xmin(:)', xmax(:)');
+	xnew = xValMMA_(:); 
+	xold1 = xold1MMA_(:); 
+	xold2 = xold2MMA_(:);
+	low = lowMMA_(:);
+	upp = uppMMA_(:);
 	
-	clear -global n m asyminit asymdec asyminc k a c d y z lam L U alpha beta p0 q0 pij qij b xo1 xo2 grad mu s Hess xVal
+	clear -global nMMA_ mMMA_ asyminitMMA_ asymdecMMA_ asymincMMA_ kMMA_ aMMA_ cMMA_ dMMA_ ...
+		yMMA_ zMMA_ lowMMA_ uppMMA_ lamMMA_ alphaMMA_ betaMMA_ p0MMA_ q0MMA_ pijMMA_ qijMMA_ bMMA_ ...
+			xold1MMA_ xold2MMA_ gradMMA_ muMMA_ sMMA_ HessMMA_ xValMMA_ constraintModificationMMA_
 end
 
-function [xnew, xold1, xold2] = Update(dfdx, gx, dgdx, xmin, xmax)
-	global xo1 xo2 xVal;
-	
+function Update(dfdx, gx, dgdx, xmin, xmax)
+	global xold1MMA_ xold2MMA_ xValMMA_;
 	%% Generate the subproblem
 	GenSub(dfdx,gx,dgdx,xmin,xmax);	%%Checked
 	%% Update xolds
-	xo2 = xo1;
-	xo1 = xVal;
+    xold2MMA_ = xold1MMA_;
+    xold1MMA_ = xValMMA_;	
 	%% Solve the dual with an interior point method
-	SolveDIP();
+	SolveDIP();	
 end
 
 function GenSub(dfdx,gx,dgdx,xmin,xmax)
-	global k asyminit L U alpha beta p0 q0 pij qij b xVal;
+	global nMMA_ kMMA_ asyminitMMA_ xold1MMA_ xold2MMA_ lowMMA_ uppMMA_ asymincMMA_ asymdecMMA_...
+		 alphaMMA_ betaMMA_ p0MMA_ q0MMA_ pijMMA_ qijMMA_ bMMA_ xValMMA_ constraintModificationMMA_;
 	
 	%% forward the iterator
-	k = 1;
+	%kMMA_ = 1;
 	%% Set asymptotes
-	L = xVal - asyminit*(xmax - xmin);
-	U = xVal + asyminit*(xmax - xmin);
+	if kMMA_< 3 || numel(lowMMA_) < nMMA_ || numel(uppMMA_) < nMMA_
+		lowMMA_ = xValMMA_ - asyminitMMA_*(xmax - xmin);
+		uppMMA_ = xValMMA_ + asyminitMMA_*(xmax - xmin);
+	else
+		zzz = (xValMMA_ - xold1MMA_) .* (xold1MMA_ - xold2MMA_);
+		gamma = ones(size(xValMMA_));
+		gamma(zzz > 0) = asymincMMA_;
+		gamma(zzz < 0) = asymdecMMA_;
+	
+		lowMMA_ = xValMMA_ - gamma .* (xold1MMA_ - lowMMA_);
+		uppMMA_ = xValMMA_ + gamma .* (uppMMA_ - xold1MMA_);
+	
+		lowmin = xValMMA_ - 10.0*(xmax - xmin);
+		lowmax = xValMMA_ - 0.01*(xmax - xmin);
+		uppmin = xValMMA_ + 0.01*(xmax - xmin);
+		uppmax = xValMMA_ + 10.0*(xmax - xmin);
+	
+		lowMMA_ = max(lowMMA_, lowmin);
+		lowMMA_ = min(lowMMA_, lowmax);
+		uppMMA_ = min(uppMMA_, uppmax);
+		uppMMA_ = max(uppMMA_, uppmin);	
+	end
+	
 	%% Set bounds and the coefficients for the approximation
 	feps = 1.0e-6;
-	alpha = 0.9*L+0.1*xVal;
-	tmpBool = alpha-xmin<0; alpha(tmpBool) = xmin(tmpBool);
-	beta = 0.9*U+0.1*xVal;
-	tmpBool = beta-xmax>0; beta(tmpBool) = xmax(tmpBool);
+	alphaMMA_ = 0.9*lowMMA_+0.1*xValMMA_;
+	tmpBool = alphaMMA_-xmin<0; alphaMMA_(tmpBool) = xmin(tmpBool);
+	betaMMA_ = 0.9*uppMMA_+0.1*xValMMA_;
+	tmpBool = betaMMA_-xmax>0; betaMMA_(tmpBool) = xmax(tmpBool);
 	
 	dfdxp = dfdx; dfdxp(dfdxp<0.0) = 0.0;
 	dfdxm = -1.0*dfdx; dfdxm(dfdxm<0.0) = 0.0;
-	p0 = (U-xVal).^2.0 .*(dfdxp + 0.001*abs(dfdx) + 0.5*feps./(U-L));
-	q0 = (xVal-L).^2.0 .*(dfdxm + 0.001*abs(dfdx) + 0.5*feps./(U-L));
+	p0MMA_ = (uppMMA_-xValMMA_).^2.0 .*(dfdxp + 0.001*abs(dfdx) + 0.5*feps./(uppMMA_-lowMMA_));
+	q0MMA_ = (xValMMA_-lowMMA_).^2.0 .*(dfdxm + 0.001*abs(dfdx) + 0.5*feps./(uppMMA_-lowMMA_));
 	
 	dfdxp = dgdx; dfdxp(dfdxp<0.0) = 0.0;
 	dfdxm = -1.0*dgdx; dfdxm(dfdxm<0.0) = 0.0;
-	pij = (U-xVal).^2.0 .* dfdxp;
-	qij = (xVal-L).^2.0 .* dfdxm;	
+	if constraintModificationMMA_
+		extra = 0.001*abs(dgdx) + 0.5*feps./(uppMMA_ - lowMMA_);
+		pijMMA_ = (uppMMA_ - xValMMA_).^2 .* (dfdxp + extra);
+		qijMMA_ = (xValMMA_ - lowMMA_).^2 .* (dfdxm + extra);	
+	else
+		pijMMA_ = (uppMMA_-xValMMA_).^2.0 .* dfdxp;
+		qijMMA_ = (xValMMA_-lowMMA_).^2.0 .* dfdxm;		
+	end
+
 	%% The constant for the constraints
-	b = -gx + sum(pij./(U-xVal) + qij./(xVal-L), 2);
+	bMMA_ = -gx + sum(pijMMA_./(uppMMA_-xValMMA_) + qijMMA_./(xValMMA_-lowMMA_), 2);
 end
 
 function SolveDIP()
-	global n m lam mu c grad s Hess;
+	global nMMA_ mMMA_ lamMMA_ muMMA_ cMMA_ gradMMA_ sMMA_ HessMMA_;
 	
-	lam = c/2.0;
-	mu = ones(size(mu));
-	tol = 1.0e-9*sqrt(m+n);
+	lamMMA_ = cMMA_/2.0;
+	muMMA_ = ones(size(muMMA_));
+	tol = 1.0e-9*sqrt(mMMA_+nMMA_);
 	epsi = 1.0;
 	err = 1.0;
 	while epsi > tol
 		loop = 0;
+		err = inf;
 		while err>0.9*epsi && loop<100
 			loop = loop + 1;	
 			%% Set up newton system
 			XYZofLAMBDA();		
 			DualGrad();		
-			for jj=1:m
-				grad(jj) = -1.0 * grad(jj) - epsi/lam(jj);
+			for jj=1:mMMA_
+				gradMMA_(jj) = -1.0 * gradMMA_(jj) - epsi/lamMMA_(jj);
 			end
-			DualHess();
-			%% Solve Newton system
-			s(1:m,1) = Hess\grad;
+			DualHess();		
+			%% Solve Newton system		
+			sMMA_(1:mMMA_,1) = HessMMA_\gradMMA_;
 			%% Get the full search direction
-			s(m+1:2*m,1) = -mu + epsi./lam(:) - s(1:m,1).*mu(:)./lam(:);
-			%% Perform linesearch and update lam and mu
+			sMMA_(mMMA_+1:2*mMMA_,1) = -muMMA_ + epsi./lamMMA_(:) - sMMA_(1:mMMA_,1).*muMMA_(:)./lamMMA_(:);
+			%% Perform linesearch and update lamMMA_ and muMMA_
 			DualLineSearch();
-			XYZofLAMBDA();	
-			%% Compute KKT res
-			err = DualResidual(epsi);			
+			% Compute KKT res
+			XYZofLAMBDA();
+			err = DualResidual(epsi);
 		end
 		epsi=epsi*0.1;
 	end
 end
 
 function XYZofLAMBDA()
-	global lam a c y z p0 q0 U L alpha beta pij qij xVal;
+	global lamMMA_ aMMA_ cMMA_ yMMA_ zMMA_ p0MMA_ q0MMA_ uppMMA_ lowMMA_ alphaMMA_ betaMMA_ pijMMA_ qijMMA_ xValMMA_;
 
-	lam(lam<0.0) = 0;
-	y = lam - c; y(y<0.0) = 0.0;
-	lamai = lam(:)' * a;	
-	z = max(0.0, 10.0*(lamai-1.0));	
+	lamMMA_(lamMMA_<0.0) = 0;
+	yMMA_ = lamMMA_ - cMMA_; yMMA_(yMMA_<0.0) = 0.0;
+	lamai = lamMMA_(:)' * aMMA_;	
+	zMMA_ = max(0.0, 10.0*(lamai-1.0));	
 	
-	pjlam = p0 + sum(pij.*lam, 1);
-	qjlam = q0 + sum(qij.*lam, 1);
-	xVal = (sqrt(pjlam).*L + sqrt(qjlam).*U) ./ (sqrt(pjlam)+sqrt(qjlam));
-	tmpBool = xVal-alpha<0; xVal(tmpBool) = alpha(tmpBool);
-	tmpBool = xVal-beta>0; xVal(tmpBool) = beta(tmpBool);
+	pjlam = p0MMA_ + sum(pijMMA_.*lamMMA_, 1);
+	qjlam = q0MMA_ + sum(qijMMA_.*lamMMA_, 1);
+	xValMMA_ = (sqrt(pjlam).*lowMMA_ + sqrt(qjlam).*uppMMA_) ./ (sqrt(pjlam)+sqrt(qjlam));
+	tmpBool = xValMMA_-alphaMMA_<0; xValMMA_(tmpBool) = alphaMMA_(tmpBool);
+	tmpBool = xValMMA_-betaMMA_>0; xValMMA_(tmpBool) = betaMMA_(tmpBool);
 	
 	clear pjlam qjlam
 end
 
-function grad = DualGrad()
-	global a y U L grad b z pij qij xVal;
+function gradMMA_ = DualGrad()
+	global aMMA_ yMMA_ uppMMA_ lowMMA_ gradMMA_ bMMA_ zMMA_ pijMMA_ qijMMA_ xValMMA_;
 	
-	grad = -b - a*z - y;
-	grad = grad + sum(pij./(U-xVal) + qij./(xVal-L),2);
+	gradMMA_ = -bMMA_ - aMMA_*zMMA_ - yMMA_;
+	gradMMA_ = gradMMA_ + sum(pijMMA_./(uppMMA_-xValMMA_) + qijMMA_./(xValMMA_-lowMMA_),2);
 end
 
 function DualHess()
-	global m p0 q0 pij qij U L lam alpha beta Hess a c mu xVal;
+	global mMMA_ p0MMA_ q0MMA_ pijMMA_ qijMMA_ uppMMA_ lowMMA_ lamMMA_ alphaMMA_ betaMMA_ HessMMA_ aMMA_ cMMA_ muMMA_ xValMMA_;
 	
-	pjlam = p0 + sum(pij.*lam, 1);
-	qjlam = q0 + sum(qij.*lam, 1);
-	PQ = pij./(U-xVal).^2.0 - qij./(xVal-L).^2.0;
-	df2 = -1.0 ./(2.0*pjlam./(U-xVal).^3.0 + 2.0*qjlam./(xVal-L).^3.0);
-	xp = (sqrt(pjlam).*L + sqrt(qjlam).*U) ./ (sqrt(pjlam)+sqrt(qjlam));
-	df2(xp-alpha<0) = 0.0;
-	df2(xp-beta>0) = 0.0;
+	pjlam = p0MMA_ + sum(pijMMA_.*lamMMA_, 1);
+	qjlam = q0MMA_ + sum(qijMMA_.*lamMMA_, 1);
+	PQ = pijMMA_./(uppMMA_-xValMMA_).^2.0 - qijMMA_./(xValMMA_-lowMMA_).^2.0;
+	df2 = -1.0 ./(2.0*pjlam./(uppMMA_-xValMMA_).^3.0 + 2.0*qjlam./(xValMMA_-lowMMA_).^3.0);
+	xp = (sqrt(pjlam).*lowMMA_ + sqrt(qjlam).*uppMMA_) ./ (sqrt(pjlam)+sqrt(qjlam));
+	df2(xp-alphaMMA_<0) = 0.0;
+	df2(xp-betaMMA_>0) = 0.0;
 	%% Create the matrix/matrix/matrix product: PQ^T * diag(df2) * PQ
 	tmp = PQ .* df2;
-	for ii=1:m
-		for jj=1:m
-			Hess(jj,ii) = 0;
-			Hess(jj,ii) = Hess(jj,ii) + tmp(ii,:)*PQ(jj,:)';
-		end
-	end
+	HessMMA_ = tmp * PQ.';
 	lamai=0.0;
-	for jj=1:m
-		if lam(jj)<0.0, lam(jj) = 0.0; end
-		lamai = lamai + lam(jj)*a(jj);
-		if lam(jj)>c(jj)
-			Hess(jj,jj) = Hess(jj,jj) -1.0;
+	for jj=1:mMMA_
+		if lamMMA_(jj)<0.0, lamMMA_(jj) = 0.0; end
+		lamai = lamai + lamMMA_(jj)*aMMA_(jj);
+		if lamMMA_(jj)>cMMA_(jj)
+			HessMMA_(jj,jj) = HessMMA_(jj,jj) -1.0;
 		end
-		Hess(jj,jj) = Hess(jj,jj) - mu(jj)/lam(jj); 
+		HessMMA_(jj,jj) = HessMMA_(jj,jj) - muMMA_(jj)/lamMMA_(jj); 
 	end
-	if lamai>0.0
-		for jj=1:m
-			for kk=1:m
-				Hess(kk,jj) = Hess(kk,jj) - 10.0*a(jj)*a(kk);
+	if lamai>1.0
+		for jj=1:mMMA_
+			for kk=1:mMMA_
+				HessMMA_(kk,jj) = HessMMA_(kk,jj) - 10.0*aMMA_(jj)*aMMA_(kk);
 			end
 		end
 	end	
 	%% pos def check
-	HessTrace = trace(Hess);
-	HessCorr = 1e-4*HessTrace/m;
+	HessTrace = trace(HessMMA_);
+	HessCorr = 1e-4*HessTrace/mMMA_;
 	if -1.0*HessCorr < 1.0e-7, HessCorr = -1.0e-7; end
-	Hess = Hess + diag(repmat(HessCorr,m,1));
-	
-	clear pjlam qjlam df2 PQ tmp
+	HessMMA_ = HessMMA_ + diag(repmat(HessCorr,mMMA_,1));
 end
 
 function DualLineSearch()
-	global m s lam mu;
+	global mMMA_ sMMA_ lamMMA_ muMMA_;
 	theta=1.005;
-	for jj=1:m
-		if theta < -1.01*s(jj)/lam(jj), theta = -1.01*s(jj)/lam(jj); end
-		if theta < -1.01*s(jj+m)/mu(jj), theta = -1.01*s(jj+m)/mu(jj); end
+	for jj=1:mMMA_
+		if theta < -1.01*sMMA_(jj)/lamMMA_(jj), theta = -1.01*sMMA_(jj)/lamMMA_(jj); end
+		if theta < -1.01*sMMA_(jj+mMMA_)/muMMA_(jj), theta = -1.01*sMMA_(jj+mMMA_)/muMMA_(jj); end
 	end
 	theta = 1.0/theta;
-	lam = lam + theta*s(1:m,:);
-	mu = mu + theta*s(m+1:2*m,1);
+	lamMMA_ = lamMMA_ + theta*sMMA_(1:mMMA_,:);
+	muMMA_ = muMMA_ + theta*sMMA_(mMMA_+1:2*mMMA_,1);
 end
 
 function nrI = DualResidual(epsi)
-	global m b a z lam mu U L pij qij y xVal;
-	res = zeros(2*m,1);
-	res(1:m,1) = -b - a.*z -y + mu;
-	res(m+1:2*m,1) = mu.*lam - epsi;
-	res(1:m,1) = res(1:m,1) + sum(pij./(U-xVal),2) + sum(qij./(xVal-L),2);
+	global mMMA_ bMMA_ aMMA_ zMMA_ lamMMA_ muMMA_ uppMMA_ lowMMA_ pijMMA_ qijMMA_ yMMA_ xValMMA_;
+	res = zeros(2*mMMA_,1);
+	res(1:mMMA_,1) = -bMMA_ - aMMA_.*zMMA_ -yMMA_ + muMMA_;
+	res(mMMA_+1:2*mMMA_,1) = muMMA_.*lamMMA_ - epsi;
+	res(1:mMMA_,1) = res(1:mMMA_,1) + sum(pijMMA_./(uppMMA_-xValMMA_),2) + sum(qijMMA_./(xValMMA_-lowMMA_),2);
 	
 	nrI=0.0;
-	for jj=1:2*m
+	for jj=1:2*mMMA_
 		if nrI<abs(res(jj))
 			nrI = abs(res(jj));
 		end
