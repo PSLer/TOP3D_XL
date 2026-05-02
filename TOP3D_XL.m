@@ -1344,7 +1344,7 @@ function Solving_SetupKeWithFixedDOFs()
 	global mapUniqueKes_;
 	global fixingCond_;
 	global modulus_;
-	
+	global cellSize_;
 	%%Identify Elements On 2nd Finest Level that Include Elements on Finest Level with Fixed DOFs
 	%%Preparation
 	allElements = zeros(meshHierarchy_(1).numElements,1,'int32');
@@ -1393,7 +1393,7 @@ function Solving_SetupKeWithFixedDOFs()
 				Solving_ApplyBConEleStiffMat_B(uniqueKesFree_(:,jEleLocally), uniqueKesFixed_(:,jEleLocally), fixedDOFsLocally, numElesOfThisNode);
 		end
 	end
-	uniqueKesFixed_ = uniqueKesFixed_ * modulus_;
+	uniqueKesFixed_ = uniqueKesFixed_ * modulus_ * cellSize_;
 	isThisEle2ndLevelIncludingFixedDOFsOn1stLevel_ = zeros(meshHierarchy_(2).numElements,1, 'int32');
 	allElements = zeros(size(allElements),'int32');
 	allElements(allElementsWithFixedDOFs,1) = 1;
