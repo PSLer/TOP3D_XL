@@ -363,10 +363,9 @@ function TOP3D_XL_PIO(inputModel, Ve0, nLoop, rMin, rHat)
 		dfdx_MMA = dfdx(:,activeEles);
 		xmin_MMA = max(0.0,xval_MMA-move);
 		xmax_MMA = min(1,xval_MMA+move);			
-		% [xmma_MMA, xold1, xold2] = MMAseq(m, n, xval_MMA, xmin_MMA, xmax_MMA, xold1, xold2, df0dx_MMA, fval, dfdx_MMA(:));	
 		[xmma_MMA, xold1, xold2, low, upp] = MMAseq(m, n, iter, xval_MMA, xmin_MMA, xmax_MMA, xold1, xold2, df0dx_MMA, fval, dfdx_MMA, low, upp);
-		change = max(abs(xmma_MMA(:)-xval_MMA(:)));	
-		x = onesArrSingle; x(activeEles) = xmma_MMA;	
+		change = max(abs(xmma_MMA(:)-xval_MMA(:)));
+		x = onesArrSingle; x(activeEles) = xmma_MMA;		
 		itimeOptimization = itimeOptimization + toc(tOptimizationClock);
 		
 		%%5.5 Prepare for next iteration
@@ -1802,248 +1801,94 @@ end
 
 %% This MMA implementation is aMMA_ translation of the cMMA_-version developed by Niles Aage at the DTU
 function [xnew, xold1, xold2, low, upp] = MMAseq(mm, nn, iter, xvalTmp, xmin, xmax, xold1, xold2, dfdx, gx, dgdx, low, upp)
-	global nMMA_; nMMA_ = nn;
-	global mMMA_; mMMA_ = mm;
-	
-	global asyminitMMA_; asyminitMMA_ = 0.5;%%0.2;
-	global asymdecMMA_; asymdecMMA_ = 0.7;%%0.65;
-	global asymincMMA_; asymincMMA_ = 1.2;%%1.08;		
-	
-	global kMMA_; kMMA_ = iter;
-	
-	global aMMA_; aMMA_ = zeros(mMMA_,1);
-	global cMMA_; cMMA_ = 1000.0 * ones(mMMA_,1);
-	global dMMA_; dMMA_ = zeros(mMMA_,1);
-	
-	global yMMA_; yMMA_ = zeros(mMMA_,1);
-	global zMMA_; zMMA_ = 0;
-	global lamMMA_; lamMMA_ = zeros(mMMA_,1);
-	
-	global lowMMA_; lowMMA_ = low(:)';
-	global uppMMA_; uppMMA_ = upp(:)';
-	
-	global alphaMMA_; alphaMMA_ = zeros(1,nMMA_);
-	global betaMMA_; betaMMA_ = zeros(1,nMMA_);
-	
-	global p0MMA_; p0MMA_ = zeros(1,nMMA_);
-	global q0MMA_; q0MMA_ = zeros(1,nMMA_);
-	global pijMMA_; pijMMA_ = zeros(mMMA_,nMMA_);
-	global qijMMA_; qijMMA_ = zeros(mMMA_,nMMA_); 
-	global bMMA_; bMMA_ = zeros(mMMA_,1);
-	
-	global xold1MMA_; xold1MMA_ = xold1(:)';
-	global xold2MMA_; xold2MMA_ = xold2(:)';
-	
-	global gradMMA_; gradMMA_ = zeros(mMMA_,1);
-	global muMMA_; muMMA_ = zeros(mMMA_,1);
-	global sMMA_; sMMA_ = zeros(2*mMMA_,1);
-	global HessMMA_; HessMMA_ = zeros(mMMA_,mMMA_);
-	
-	global xValMMA_; xValMMA_ = xvalTmp(:)';
-	global constraintModificationMMA_; constraintModificationMMA_ = true;
-	
-	%Update(dfdx(:)', gx(:), reshape(dgdx,nMMA_,mMMA_)', xmin(:)', xmax(:)');
-	[rowCheck, colCheck] = size(dgdx);
-	if ~(mMMA_==rowCheck && nMMA_==colCheck)
+	if ~isequal(size(dgdx), [mm, nn])
 		error('Sensitivities of constraint(s) must be arranged in an m-by-n array, each column represent the sensitivity values of different constraint functions of this element!');
 	end
-	Update(dfdx(:)', gx(:), dgdx, xmin(:)', xmax(:)');
-	xnew = xValMMA_(:); 
-	xold1 = xold1MMA_(:); 
-	xold2 = xold2MMA_(:);
-	low = lowMMA_(:);
-	upp = uppMMA_(:);
-	
-	clear -global nMMA_ mMMA_ asyminitMMA_ asymdecMMA_ asymincMMA_ kMMA_ aMMA_ cMMA_ dMMA_ ...
-		yMMA_ zMMA_ lowMMA_ uppMMA_ lamMMA_ alphaMMA_ betaMMA_ p0MMA_ q0MMA_ pijMMA_ qijMMA_ bMMA_ ...
-			xold1MMA_ xold2MMA_ gradMMA_ muMMA_ sMMA_ HessMMA_ xValMMA_ constraintModificationMMA_
-end
-
-function Update(dfdx, gx, dgdx, xmin, xmax)
-	global xold1MMA_ xold2MMA_ xValMMA_;
-	%% Generate the subproblem
-	GenSub(dfdx,gx,dgdx,xmin,xmax);	%%Checked
-	%% Update xolds
-    xold2MMA_ = xold1MMA_;
-    xold1MMA_ = xValMMA_;	
-	%% Solve the dual with an interior point method
-	SolveDIP();	
-end
-
-function GenSub(dfdx,gx,dgdx,xmin,xmax)
-	global nMMA_ kMMA_ asyminitMMA_ xold1MMA_ xold2MMA_ lowMMA_ uppMMA_ asymincMMA_ asymdecMMA_...
-		 alphaMMA_ betaMMA_ p0MMA_ q0MMA_ pijMMA_ qijMMA_ bMMA_ xValMMA_ constraintModificationMMA_;
-	
-	%% forward the iterator
-	%kMMA_ = 1;
-	%% Set asymptotes
-	if kMMA_< 3 || numel(lowMMA_) < nMMA_ || numel(uppMMA_) < nMMA_
-		lowMMA_ = xValMMA_ - asyminitMMA_*(xmax - xmin);
-		uppMMA_ = xValMMA_ + asyminitMMA_*(xmax - xmin);
+	x = xvalTmp(:).'; xmin = xmin(:).'; xmax = xmax(:).';
+	old1 = xold1(:).'; old2 = xold2(:).';
+	low = low(:).'; upp = upp(:).';
+	dfdx = dfdx(:).'; gx = gx(:);
+	span = xmax - xmin;
+	if iter < 3 || numel(low) < nn || numel(upp) < nn
+		low = x - 0.5*span;
+		upp = x + 0.5*span;
 	else
-		zzz = (xValMMA_ - xold1MMA_) .* (xold1MMA_ - xold2MMA_);
-		gamma = ones(size(xValMMA_));
-		gamma(zzz > 0) = asymincMMA_;
-		gamma(zzz < 0) = asymdecMMA_;
-	
-		lowMMA_ = xValMMA_ - gamma .* (xold1MMA_ - lowMMA_);
-		uppMMA_ = xValMMA_ + gamma .* (uppMMA_ - xold1MMA_);
-	
-		lowmin = xValMMA_ - 10.0*(xmax - xmin);
-		lowmax = xValMMA_ - 0.01*(xmax - xmin);
-		uppmin = xValMMA_ + 0.01*(xmax - xmin);
-		uppmax = xValMMA_ + 10.0*(xmax - xmin);
-	
-		lowMMA_ = max(lowMMA_, lowmin);
-		lowMMA_ = min(lowMMA_, lowmax);
-		uppMMA_ = min(uppMMA_, uppmax);
-		uppMMA_ = max(uppMMA_, uppmin);	
+		trend = (x-old1).*(old1-old2);
+		gamma = ones(size(x));
+		gamma(trend > 0) = 1.2;
+		gamma(trend < 0) = 0.7;
+		low = x - gamma.*(old1-low);
+		upp = x + gamma.*(upp-old1);
+		low = min(max(low, x-10.0*span), x-0.01*span);
+		upp = max(min(upp, x+10.0*span), x+0.01*span);
 	end
+	alpha = max(0.9*low+0.1*x, xmin);
+	beta = min(0.9*upp+0.1*x, xmax);
+	ux = upp-x; xl = x-low;
+	ux2 = ux.^2; xl2 = xl.^2;
+	regularizer = 0.5e-6./(upp-low);
+	extra = 0.001*abs(dfdx) + regularizer;
+	p0 = ux2.*(max(dfdx,0) + extra);
+	q0 = xl2.*(max(-dfdx,0) + extra);
+	% Keep constraint modification enabled, unlike the discussed C++ setting.
+	extra = 0.001*abs(dgdx) + regularizer;
+	P = ux2.*(max(dgdx,0) + extra);
+	Q = xl2.*(max(-dgdx,0) + extra);
+	b = -gx + sum(P./ux + Q./xl, 2);
+	xold2 = old1(:);
+	xold1 = x(:);
 	
-	%% Set bounds and the coefficients for the approximation
-	feps = 1.0e-6;
-	alphaMMA_ = 0.9*lowMMA_+0.1*xValMMA_;
-	tmpBool = alphaMMA_-xmin<0; alphaMMA_(tmpBool) = xmin(tmpBool);
-	betaMMA_ = 0.9*uppMMA_+0.1*xValMMA_;
-	tmpBool = betaMMA_-xmax>0; betaMMA_(tmpBool) = xmax(tmpBool);
-	
-	dfdxp = dfdx; dfdxp(dfdxp<0.0) = 0.0;
-	dfdxm = -1.0*dfdx; dfdxm(dfdxm<0.0) = 0.0;
-	p0MMA_ = (uppMMA_-xValMMA_).^2.0 .*(dfdxp + 0.001*abs(dfdx) + 0.5*feps./(uppMMA_-lowMMA_));
-	q0MMA_ = (xValMMA_-lowMMA_).^2.0 .*(dfdxm + 0.001*abs(dfdx) + 0.5*feps./(uppMMA_-lowMMA_));
-	
-	dfdxp = dgdx; dfdxp(dfdxp<0.0) = 0.0;
-	dfdxm = -1.0*dgdx; dfdxm(dfdxm<0.0) = 0.0;
-	if constraintModificationMMA_
-		extra = 0.001*abs(dgdx) + 0.5*feps./(uppMMA_ - lowMMA_);
-		pijMMA_ = (uppMMA_ - xValMMA_).^2 .* (dfdxp + extra);
-		qijMMA_ = (xValMMA_ - lowMMA_).^2 .* (dfdxm + extra);	
-	else
-		pijMMA_ = (uppMMA_-xValMMA_).^2.0 .* dfdxp;
-		qijMMA_ = (xValMMA_-lowMMA_).^2.0 .* dfdxm;		
-	end
-
-	%% The constant for the constraints
-	bMMA_ = -gx + sum(pijMMA_./(uppMMA_-xValMMA_) + qijMMA_./(xValMMA_-lowMMA_), 2);
-end
-
-function SolveDIP()
-	global nMMA_ mMMA_ lamMMA_ muMMA_ cMMA_ gradMMA_ sMMA_ HessMMA_;
-	
-	lamMMA_ = cMMA_/2.0;
-	muMMA_ = ones(size(muMMA_));
-	tol = 1.0e-9*sqrt(mMMA_+nMMA_);
+	lambda = 500*ones(mm,1);
+	mu = ones(mm,1);
+	tol = 1.0e-9*sqrt(mm+nn);
 	epsi = 1.0;
-	err = 1.0;
+	% Cached state is valid across Newton steps and barrier levels: only
+	% lambda changes it, whereas mu and epsi affect the small dual system.
+	%[x, y, pj, qj, free, ux, xl] = primal(lambda);
+	[x, y, pj, qj, free, ux, xl] = primal(lambda, p0, P, q0, Q, low, upp, alpha, beta);
 	while epsi > tol
 		loop = 0;
 		err = inf;
-		while err>0.9*epsi && loop<100
-			loop = loop + 1;	
-			%% Set up newton system
-			XYZofLAMBDA();		
-			DualGrad();		
-			for jj=1:mMMA_
-				gradMMA_(jj) = -1.0 * gradMMA_(jj) - epsi/lamMMA_(jj);
-			end
-			DualHess();		
-			%% Solve Newton system		
-			sMMA_(1:mMMA_,1) = HessMMA_\gradMMA_;
-			%% Get the full search direction
-			sMMA_(mMMA_+1:2*mMMA_,1) = -muMMA_ + epsi./lamMMA_(:) - sMMA_(1:mMMA_,1).*muMMA_(:)./lamMMA_(:);
-			%% Perform linesearch and update lamMMA_ and muMMA_
-			DualLineSearch();
-			% Compute KKT res
-			XYZofLAMBDA();
-			err = DualResidual(epsi);
+		while err > 0.9*epsi && loop < 100
+			loop = loop+1;
+			grad = -b-y + sum(P./ux + Q./xl,2);
+			rhs = -grad-epsi./lambda;
+			PQ = P./ux.^2 - Q./xl.^2;
+			curvature = -1./(2*pj./ux.^3 + 2*qj./xl.^3);
+			curvature(~free) = 0;
+			H = (PQ.*curvature)*PQ.';
+			diagonal = 1:mm+1:mm*mm;
+			H(diagonal) = H(diagonal) - (lambda > 1000).' - (mu./lambda).';
+			% This is the original negative diagonal shift, not a PD test.
+			correction = min(1e-4*trace(H)/mm, -1e-7);
+			H(diagonal) = H(diagonal) + correction;
+			dlambda = H\rhs;
+			dmu = -mu + epsi./lambda - dlambda.*mu./lambda;
+			theta = 1/max([1.005; -1.01*dlambda./lambda; -1.01*dmu./mu]);
+			lambda = lambda + theta*dlambda;
+			mu = mu + theta*dmu;
+			%[x, y, pj, qj, free, ux, xl] = primal(lambda);
+			[x, y, pj, qj, free, ux, xl] = primal(lambda, p0, P, q0, Q, low, upp, alpha, beta);
+			% Preserve the residual's separate reductions (the gradient above
+			% intentionally uses the original combined reduction).
+			residual = -b-y+mu + sum(P./ux,2) + sum(Q./xl,2);
+			err = max(abs([residual; mu.*lambda-epsi]));
 		end
-		epsi=epsi*0.1;
+		epsi = epsi*0.1;
 	end
+	xnew = x(:); low = low(:); upp = upp(:);
+
 end
 
-function XYZofLAMBDA()
-	global lamMMA_ aMMA_ cMMA_ yMMA_ zMMA_ p0MMA_ q0MMA_ uppMMA_ lowMMA_ alphaMMA_ betaMMA_ pijMMA_ qijMMA_ xValMMA_;
-
-	lamMMA_(lamMMA_<0.0) = 0;
-	yMMA_ = lamMMA_ - cMMA_; yMMA_(yMMA_<0.0) = 0.0;
-	lamai = lamMMA_(:)' * aMMA_;	
-	zMMA_ = max(0.0, 10.0*(lamai-1.0));	
-	
-	pjlam = p0MMA_ + sum(pijMMA_.*lamMMA_, 1);
-	qjlam = q0MMA_ + sum(qijMMA_.*lamMMA_, 1);
-	xValMMA_ = (sqrt(pjlam).*lowMMA_ + sqrt(qjlam).*uppMMA_) ./ (sqrt(pjlam)+sqrt(qjlam));
-	tmpBool = xValMMA_-alphaMMA_<0; xValMMA_(tmpBool) = alphaMMA_(tmpBool);
-	tmpBool = xValMMA_-betaMMA_>0; xValMMA_(tmpBool) = betaMMA_(tmpBool);
-	
-	clear pjlam qjlam
-end
-
-function gradMMA_ = DualGrad()
-	global aMMA_ yMMA_ uppMMA_ lowMMA_ gradMMA_ bMMA_ zMMA_ pijMMA_ qijMMA_ xValMMA_;
-	
-	gradMMA_ = -bMMA_ - aMMA_*zMMA_ - yMMA_;
-	gradMMA_ = gradMMA_ + sum(pijMMA_./(uppMMA_-xValMMA_) + qijMMA_./(xValMMA_-lowMMA_),2);
-end
-
-function DualHess()
-	global mMMA_ p0MMA_ q0MMA_ pijMMA_ qijMMA_ uppMMA_ lowMMA_ lamMMA_ alphaMMA_ betaMMA_ HessMMA_ aMMA_ cMMA_ muMMA_ xValMMA_;
-	
-	pjlam = p0MMA_ + sum(pijMMA_.*lamMMA_, 1);
-	qjlam = q0MMA_ + sum(qijMMA_.*lamMMA_, 1);
-	PQ = pijMMA_./(uppMMA_-xValMMA_).^2.0 - qijMMA_./(xValMMA_-lowMMA_).^2.0;
-	df2 = -1.0 ./(2.0*pjlam./(uppMMA_-xValMMA_).^3.0 + 2.0*qjlam./(xValMMA_-lowMMA_).^3.0);
-	xp = (sqrt(pjlam).*lowMMA_ + sqrt(qjlam).*uppMMA_) ./ (sqrt(pjlam)+sqrt(qjlam));
-	df2(xp-alphaMMA_<0) = 0.0;
-	df2(xp-betaMMA_>0) = 0.0;
-	%% Create the matrix/matrix/matrix product: PQ^T * diag(df2) * PQ
-	tmp = PQ .* df2;
-	HessMMA_ = tmp * PQ.';
-	lamai=0.0;
-	for jj=1:mMMA_
-		if lamMMA_(jj)<0.0, lamMMA_(jj) = 0.0; end
-		lamai = lamai + lamMMA_(jj)*aMMA_(jj);
-		if lamMMA_(jj)>cMMA_(jj)
-			HessMMA_(jj,jj) = HessMMA_(jj,jj) -1.0;
-		end
-		HessMMA_(jj,jj) = HessMMA_(jj,jj) - muMMA_(jj)/lamMMA_(jj); 
-	end
-	if lamai>1.0
-		for jj=1:mMMA_
-			for kk=1:mMMA_
-				HessMMA_(kk,jj) = HessMMA_(kk,jj) - 10.0*aMMA_(jj)*aMMA_(kk);
-			end
-		end
-	end	
-	%% pos def check
-	HessTrace = trace(HessMMA_);
-	HessCorr = 1e-4*HessTrace/mMMA_;
-	if -1.0*HessCorr < 1.0e-7, HessCorr = -1.0e-7; end
-	HessMMA_ = HessMMA_ + diag(repmat(HessCorr,mMMA_,1));
-end
-
-function DualLineSearch()
-	global mMMA_ sMMA_ lamMMA_ muMMA_;
-	theta=1.005;
-	for jj=1:mMMA_
-		if theta < -1.01*sMMA_(jj)/lamMMA_(jj), theta = -1.01*sMMA_(jj)/lamMMA_(jj); end
-		if theta < -1.01*sMMA_(jj+mMMA_)/muMMA_(jj), theta = -1.01*sMMA_(jj+mMMA_)/muMMA_(jj); end
-	end
-	theta = 1.0/theta;
-	lamMMA_ = lamMMA_ + theta*sMMA_(1:mMMA_,:);
-	muMMA_ = muMMA_ + theta*sMMA_(mMMA_+1:2*mMMA_,1);
-end
-
-function nrI = DualResidual(epsi)
-	global mMMA_ bMMA_ aMMA_ zMMA_ lamMMA_ muMMA_ uppMMA_ lowMMA_ pijMMA_ qijMMA_ yMMA_ xValMMA_;
-	res = zeros(2*mMMA_,1);
-	res(1:mMMA_,1) = -bMMA_ - aMMA_.*zMMA_ -yMMA_ + muMMA_;
-	res(mMMA_+1:2*mMMA_,1) = muMMA_.*lamMMA_ - epsi;
-	res(1:mMMA_,1) = res(1:mMMA_,1) + sum(pijMMA_./(uppMMA_-xValMMA_),2) + sum(qijMMA_./(xValMMA_-lowMMA_),2);
-	
-	nrI=0.0;
-	for jj=1:2*mMMA_
-		if nrI<abs(res(jj))
-			nrI = abs(res(jj));
-		end
-	end
+function [xx, yy, pp, qq, interior, u, l] = primal(lam, p0, P, q0, Q, low, upp, alpha, beta)
+    % Retain sum order instead of replacing these with BLAS products.
+    lam = max(lam,0);
+    yy = max(lam-1000,0);
+    pp = p0 + sum(P.*lam,1);
+    qq = q0 + sum(Q.*lam,1);
+    sp = sqrt(pp); sq = sqrt(qq);
+    unconstrained = (sp.*low + sq.*upp)./(sp+sq);
+    interior = ~(unconstrained-alpha < 0 | unconstrained-beta > 0);
+    xx = min(max(unconstrained,alpha),beta);
+    u = upp-xx; l = xx-low;
 end
